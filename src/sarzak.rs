@@ -25,11 +25,21 @@ const JSON_EXT: &str = "json";
 #[command(author, version, about)]
 #[command(propagate_version = true)]
 struct Args {
-    #[clap(short, action=ArgAction::SetTrue)]
     /// Test mode
     ///
     /// Don't execute commands, but instead print what commands would be executed.
+    #[clap(short, action=ArgAction::SetTrue)]
     test: bool,
+
+    /// Generate Code for "meta" domain
+    ///
+    /// This flag changes code generation for domains that are considered meta
+    /// domains. At the moment those include the Sarzak and Drawing Domains.
+    ///
+    /// You probably don't want this unless your name is Keith.
+    #[arg(short, long)]
+    meta: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -53,6 +63,7 @@ enum Command {
         /// the Rust package. It will contain a blank model file the the `models`
         /// subdirectory.
         domain: String,
+
         /// Path to package
         ///
         /// If included, `sarzak` will create a new domain in the specified
@@ -95,17 +106,22 @@ fn main() -> Result<()> {
         Command::New {
             domain,
             package_dir,
-        } => execute_command_new(&domain, &package_dir, args.test)?,
+        } => execute_command_new(&domain, &package_dir, args.meta, args.test)?,
         Command::Generate {
             domains,
             package_dir,
-        } => execute_command_generate(&domains, &package_dir, args.test)?,
+        } => execute_command_generate(&domains, &package_dir, args.meta, args.test)?,
     }
 
     Ok(())
 }
 
-fn execute_command_new(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> Result<()> {
+fn execute_command_new(
+    domain: &str,
+    dir: &Option<PathBuf>,
+    meta: bool,
+    test_mode: bool,
+) -> Result<()> {
     let rust_name = domain.to_snake_case();
 
     // Find the package root
@@ -184,7 +200,7 @@ fn execute_command_new(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> 
     // Yes!
     debug!("Generating 🧬 code!");
     if !test_mode {
-        generate_domain_code(&package_root, &model_file, test_mode)?;
+        generate_domain_code(&package_root, &model_file, meta, test_mode)?;
     }
 
     Ok(())
@@ -222,6 +238,7 @@ fn generate_module_file(domain: &str) -> String {
 fn execute_command_generate(
     domains: &Option<Vec<String>>,
     gen_dir: &Option<PathBuf>,
+    meta: bool,
     test_mode: bool,
 ) -> Result<()> {
     // Find the package root
@@ -252,7 +269,7 @@ fn execute_command_generate(
 
                 debug!("⭐️ Found {:?}!", model_file);
 
-                generate_domain_code(&package_root, &model_file, test_mode)?;
+                generate_domain_code(&package_root, &model_file, meta, test_mode)?;
             }
         }
     } else {
@@ -261,7 +278,7 @@ fn execute_command_generate(
             let path = &entry?.path();
             if let Some(ext) = path.extension() {
                 if ext == "json" {
-                    generate_domain_code(&package_root, &path, test_mode)?;
+                    generate_domain_code(&package_root, &path, meta, test_mode)?;
                 }
             }
         }
@@ -275,7 +292,12 @@ fn execute_command_generate(
 /// There is an assumption here that the model file is named the same as the
 /// module, and all of it's files. This assumption holds true assuming it was
 /// all setup with this program.
-fn generate_domain_code(root: &PathBuf, model_file: &PathBuf, test_mode: bool) -> Result<()> {
+fn generate_domain_code(
+    root: &PathBuf,
+    model_file: &PathBuf,
+    meta: bool,
+    test_mode: bool,
+) -> Result<()> {
     // Check that the path exists, and that it's a file. From there we just
     // have to trust...
     anyhow::ensure!(
@@ -327,6 +349,8 @@ fn generate_domain_code(root: &PathBuf, model_file: &PathBuf, test_mode: bool) -
         generate_types(
             &model,
             &module_path,
+            meta,
+            // This is the package name
             &root
                 .as_path()
                 .components()
