@@ -9,10 +9,11 @@ use log::debug;
 use pretty_env_logger;
 use uuid::Uuid;
 
-use nut::codegen::{emitln, CachingContext, SarzakModel};
+use nut::codegen::{emitln, CachingContext, SarzakModel, WriteSarzakModel};
 use nut::domain::{generate_macros, generate_store, generate_types};
 
 const BLANK_MODEL: &str = include_str!("../models/blank.json");
+const MODEL_DIR: &str = "models";
 
 const TYPES: &str = "types";
 const MACROS: &str = "macros";
@@ -138,7 +139,7 @@ fn execute_command_new(
     // Write a blank model file.
     //
     let mut model_file = package_root.clone();
-    model_file.push("models");
+    model_file.push(MODEL_DIR);
 
     // Make sure the directory exists.
     //
@@ -248,7 +249,7 @@ fn execute_command_generate(
     // Ensure that we can find the models directory
     //
     let mut model_dir = package_root.clone();
-    model_dir.push("models");
+    model_dir.push(MODEL_DIR);
     anyhow::ensure!(
         model_dir.exists(),
         format!("😱Unable to find models directory: {:?}.", model_dir)
@@ -326,14 +327,20 @@ fn generate_domain_code(
         ));
     };
 
+    // let mut output = root.clone();
+    // output.push(MODEL_DIR);
+    // output.push("fubar");
+    // output.set_file_name(&module);
+    // output.set_extension("sarzak");
+
     println!(
         "Generating 🧬 code for domain ✨{:?}✨!",
         module.to_string_lossy()
     );
     debug!("Generating 🧬 code for domain, {:?}!", model_file);
 
-    let model = SarzakModel::load_cuckoo_model(&model_file.to_string_lossy())
-        .context("😱 reading model file")?;
+    let model = SarzakModel::load_cuckoo_model(&model_file).context("😱 reading model file")?;
+    // File::create(&output).context("couldn't open file for writing")?.to_json(&model);
 
     let mut module_path = root.clone();
     module_path.push("src");
