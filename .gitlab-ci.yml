@@ -2,4 +2,4 @@ build-and-install:
   stage: build
   script:
    - cargo install --path .
-   - "curl -k -X POST --fail -F token=glptt-fa3631ca851fa84718fce5660a9020750c87276a -F ref=main https://git.uberfoo.com/api/v4/projects/50/trigger/pipeline"
+   - "curl -k -X POST --fail -F token=glptt-fa3631ca851fa84718fce5660a9020750c87276a -F ref=master https://git.uberfoo.com/api/v4/projects/50/trigger/pipeline"
