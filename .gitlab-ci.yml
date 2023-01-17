@@ -1,0 +1,4 @@
+build-and-install:
+  stage: build
+  script:
+   - cargo install --path .

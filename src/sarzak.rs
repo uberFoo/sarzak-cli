@@ -29,17 +29,15 @@ struct Args {
     /// Test mode
     ///
     /// Don't execute commands, but instead print what commands would be executed.
-    #[clap(short, action=ArgAction::SetTrue)]
+    #[clap(long, short, action=ArgAction::SetTrue)]
     test: bool,
 
-    /// Generate Code for "meta" domain
+    /// Path to package
     ///
-    /// This flag changes code generation for domains that are considered meta
-    /// domains. At the moment those include the Sarzak and Drawing Domains.
-    ///
-    /// You probably don't want this unless your name is Keith.
+    /// If included, `sarzak` will create a new domain in the specified
+    /// location. It must exist, and must be part of a Rust package.
     #[arg(short, long)]
-    meta: bool,
+    package_dir: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Command,
@@ -64,13 +62,6 @@ enum Command {
         /// the Rust package. It will contain a blank model file the the `models`
         /// subdirectory.
         domain: String,
-
-        /// Path to package
-        ///
-        /// If included, `sarzak` will create a new domain in the specified
-        /// location. It must exist, and must be part of a Rust package.
-        #[arg(short, long)]
-        package_dir: Option<PathBuf>,
     },
     /// Generate code
     ///
@@ -85,12 +76,21 @@ enum Command {
         #[arg(use_value_delimiter = true, value_delimiter = ',')]
         domains: Option<Vec<String>>,
 
-        /// Path to package
+        /// Generate Code for "meta" domain
         ///
-        /// If included, code generation will commence in the specified package.
-        /// The location must exist, and be part of a a Rust package.
+        /// This flag changes code generation for domains that are considered meta
+        /// domains. At the moment those include the Sarzak and Drawing Domains.
+        ///
+        /// You probably don't want this unless your name is Keith.
         #[arg(short, long)]
-        package_dir: Option<PathBuf>,
+        meta: bool,
+
+        /// Doc Tests
+        ///
+        /// This flag controls the generation of doc tests. It is disabled by default.
+        /// Therefore, use this flag to enable generation of tests.
+        #[clap(long, short, action=ArgAction::SetTrue)]
+        doc_tests: bool,
     },
 }
 
@@ -104,14 +104,12 @@ fn main() -> Result<()> {
     }
 
     match args.command {
-        Command::New {
-            domain,
-            package_dir,
-        } => execute_command_new(&domain, &package_dir, args.meta, args.test)?,
+        Command::New { domain } => execute_command_new(&domain, &args.package_dir, args.test)?,
         Command::Generate {
             domains,
-            package_dir,
-        } => execute_command_generate(&domains, &package_dir, args.meta, args.test)?,
+            meta,
+            doc_tests,
+        } => execute_command_generate(&domains, &args.package_dir, meta, args.test, doc_tests)?,
     }
 
     Ok(())
@@ -120,7 +118,7 @@ fn main() -> Result<()> {
 fn execute_command_new(
     domain: &str,
     dir: &Option<PathBuf>,
-    meta: bool,
+    // meta: bool,
     test_mode: bool,
 ) -> Result<()> {
     let rust_name = domain.to_snake_case();
@@ -199,10 +197,13 @@ fn execute_command_new(
     // Generate code for the blank model? So that everything is happy?
     //
     // Yes!
-    debug!("Generating 🧬 code!");
-    if !test_mode {
-        generate_domain_code(&package_root, &model_file, meta, test_mode)?;
-    }
+    // Mabye no...everything is already happy because lib.rs doesn't know about
+    // this module yet. I don't want to generate code because I'm tired of
+    // passing the same args to both functions.
+    // debug!("Generating 🧬 code!");
+    // if !test_mode {
+    //     generate_domain_code(&package_root, &model_file, meta, test_mode)?;
+    // }
 
     Ok(())
 }
@@ -221,17 +222,27 @@ fn generate_module_file(domain: &str) -> String {
     );
     emitln!(context, "use uuid::{uuid, Uuid};");
     emitln!(context, "");
-    emitln!(context, "#[macro_use]");
     emitln!(context, "pub mod macros;");
     emitln!(context, "pub mod store;");
     emitln!(context, "pub mod types;");
     emitln!(context, "");
-    emitln!(context, "pub use types::*;");
     emitln!(context, "pub use store::ObjectStore;");
+    emitln!(context, "pub use types::*;");
+    emitln!(context, "pub use macros::*;");
     emitln!(context, "");
     emitln!(context, "// {}", domain);
     emitln!(context, "pub const UUID_NS: Uuid = uuid!(\"{}\");", uuid);
     emitln!(context, "");
+    emitln!(context, "#[cfg(test)]");
+    emitln!(context, "mod tests {");
+    context.increase_indent();
+    emitln!(context, "use super::*;");
+    emitln!(context, "");
+    emitln!(context, "#[test]");
+    emitln!(context, "fn test() {");
+    emitln!(context, "}");
+    context.decrease_indent();
+    emitln!(context, "}");
 
     context.commit()
 }
@@ -241,6 +252,7 @@ fn execute_command_generate(
     gen_dir: &Option<PathBuf>,
     meta: bool,
     test_mode: bool,
+    doc_tests: bool,
 ) -> Result<()> {
     // Find the package root
     //
@@ -270,7 +282,7 @@ fn execute_command_generate(
 
                 debug!("⭐️ Found {:?}!", model_file);
 
-                generate_domain_code(&package_root, &model_file, meta, test_mode)?;
+                generate_domain_code(&package_root, &model_file, meta, test_mode, doc_tests)?;
             }
         }
     } else {
@@ -279,7 +291,7 @@ fn execute_command_generate(
             let path = &entry?.path();
             if let Some(ext) = path.extension() {
                 if ext == "json" {
-                    generate_domain_code(&package_root, &path, meta, test_mode)?;
+                    generate_domain_code(&package_root, &path, meta, test_mode, doc_tests)?;
                 }
             }
         }
@@ -298,6 +310,7 @@ fn generate_domain_code(
     model_file: &PathBuf,
     meta: bool,
     test_mode: bool,
+    doc_tests: bool,
 ) -> Result<()> {
     // Check that the path exists, and that it's a file. From there we just
     // have to trust...
@@ -347,25 +360,21 @@ fn generate_domain_code(
     module_path.push(&module);
     module_path.push("fubar");
 
+    let package = root
+        .as_path()
+        .components()
+        .last()
+        .unwrap()
+        .as_os_str()
+        .to_string_lossy();
+
     // generate types.rs
     //
     module_path.set_file_name(TYPES);
     module_path.set_extension(RS_EXT);
     debug!("Writing 🖍️ {:?}!", module_path);
     if !test_mode {
-        generate_types(
-            &model,
-            &module_path,
-            meta,
-            // This is the package name
-            &root
-                .as_path()
-                .components()
-                .last()
-                .unwrap()
-                .as_os_str()
-                .to_string_lossy(),
-        )?;
+        generate_types(&model, &module_path, &package, meta, doc_tests)?;
     }
 
     // generate store.rs
@@ -374,7 +383,7 @@ fn generate_domain_code(
     module_path.set_extension(RS_EXT);
     debug!("Writing ✏️ {:?}!", module_path);
     if !test_mode {
-        generate_store(&model, &module_path)?;
+        generate_store(&model, &module_path, &package, meta, doc_tests)?;
     }
 
     // generate macros.rs
@@ -383,7 +392,7 @@ fn generate_domain_code(
     module_path.set_extension(RS_EXT);
     debug!("Writing ✒️ {:?}!", module_path);
     if !test_mode {
-        generate_macros(&model, &module_path)?;
+        generate_macros(&model, &module_path, &package, meta, doc_tests)?;
     }
 
     Ok(())
