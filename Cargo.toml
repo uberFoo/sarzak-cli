@@ -15,7 +15,6 @@ heck = "0.4.0"
 log = "0.4.17"
 # nut = { git = "ssh://git@git.uberfoo.com:30001/uberfoo/nut.git", branch = "develop" }
 nut = { path = "../nut" }
-sarzak = { path = "../sarzak" }
 sarzak-mc = { path = "../nut/crates/sarzak-mc" }
 pretty_env_logger = "0.4.0"
 serde = { version = "1.0.152", features = ["derive"] }

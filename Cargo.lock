@@ -551,7 +551,6 @@ dependencies = [
  "log",
  "nut",
  "pretty_env_logger",
- "sarzak",
  "sarzak-mc",
  "serde",
  "toml",
