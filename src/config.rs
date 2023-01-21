@@ -2,6 +2,8 @@ use std::{collections::HashMap, path::PathBuf};
 
 use serde::Deserialize;
 
+use sarzak_mc::SarzakCompilerOptions;
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub domains: HashMap<String, DomainConfig>,
@@ -11,26 +13,17 @@ pub struct Config {
 pub struct DomainConfig {
     pub path: PathBuf,
     pub module: String,
+    /// Sarzak model compiler
+    ///
+    /// First off, everything in [`SarzakCompilerOptions`] is an `Option`. The way
+    /// the TOML parser works since they are all optional we can specify defaults
+    /// as `sarzak = {}`.
+    ///
+    /// Now, I'd love that this be `compiler: CompilerEnum`, but I can't get the
+    /// parser to grok my meaning. Once I get another compiler, I'll have to make
+    /// them each optional, which is going to fuck with things. You know, if I
+    /// can do it in JSON, I don't know why I can't do it in TOML. If If can't
+    /// do what I need in TOML, I could switch to JSON. That would be ugly. Maybe
+    /// YAML?
     pub sarzak: SarzakCompilerOptions,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SarzakCompilerOptions {
-    /// Enable output for domains sarzak and drawing
-    ///
-    /// Specifically this flag affects how objects are imported across domains.
-    pub meta: Option<bool>,
-    /// Generate documentation tests
-    ///
-    /// Currently this includes tests for the `new` associated function on generated
-    /// structs. A function `test_default` is generated for enums, that creates
-    /// instances, in a manner similar to `new` for structs.
-    ///
-    /// Tests are also generated for the relationship navigation macros.
-    pub doc_tests: Option<bool>,
-    /// Control emitting new implementations
-    ///
-    /// This is orthogonal to `doc_tests`. While the latter relies on this,
-    /// this does not rely on it.
-    pub new: Option<bool>,
 }

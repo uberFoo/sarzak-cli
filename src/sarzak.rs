@@ -18,7 +18,9 @@ use toml_edit::{table, value, Document};
 use uuid::Uuid;
 
 use nut::codegen::{emitln, CachingContext, SarzakModel};
-use nut::domain::{generate_macros, generate_store, generate_types};
+use nut::sarzak::mc::SarzakModelCompiler;
+
+use sarzak_mc::SarzakCompilerOptions;
 
 use sarzak_cli::config::Config;
 
@@ -27,11 +29,6 @@ const CONFIG: &str = "sarzak.toml";
 const BLANK_MODEL: &str = include_str!("../models/blank.json");
 const MODEL_DIR: &str = "models";
 
-const TYPES: &str = "types";
-const MACROS: &str = "macros";
-const STORE: &str = "store";
-
-const RS_EXT: &str = "rs";
 const JSON_EXT: &str = "json";
 
 // Exit codes
@@ -90,24 +87,19 @@ enum Command {
         /// The comma separated list of domains for which code will be generated.
         /// If this argument is not included, and there are multiple domain models,
         /// then code will be generated for all models in the domain.
-        #[arg(use_value_delimiter = true, value_delimiter = ',')]
+        #[arg(long, short, use_value_delimiter = true, value_delimiter = ',')]
         domains: Option<Vec<String>>,
 
-        /// Generate Code for "meta" domain
-        ///
-        /// This flag changes code generation for domains that are considered meta
-        /// domains. At the moment those include the Sarzak and Drawing Domains.
-        ///
-        /// You probably don't want this unless your name is Keith.
-        #[arg(short, long)]
-        meta: Option<bool>,
+        #[command(subcommand)]
+        compiler: Option<Compiler>,
+    },
+}
 
-        /// Doc Tests
-        ///
-        /// This flag controls the generation of doc tests. It is disabled by default.
-        /// Therefore, use this flag to enable generation of tests.
-        #[clap(long, short)]
-        doc_tests: Option<bool>,
+#[derive(Debug, Subcommand)]
+enum Compiler {
+    Sarzak {
+        #[command(flatten)]
+        options: SarzakCompilerOptions,
     },
 }
 
@@ -124,22 +116,15 @@ fn main() -> Result<()> {
 
     match args.command {
         Command::New { domain } => execute_command_new(&domain, &args.package_dir, args.test)?,
-        Command::Generate {
-            domains,
-            meta,
-            doc_tests,
-        } => execute_command_generate(&domains, &args.package_dir, &meta, args.test, &doc_tests)?,
+        Command::Generate { compiler, domains } => {
+            execute_command_generate(&compiler, &domains, &args.package_dir, args.test)?
+        }
     }
 
     Ok(())
 }
 
-fn execute_command_new(
-    domain: &str,
-    dir: &Option<PathBuf>,
-    // meta: bool,
-    test_mode: bool,
-) -> Result<()> {
+fn execute_command_new(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> Result<()> {
     let rust_name = domain.to_snake_case();
 
     // Find the package root
@@ -182,7 +167,7 @@ fn execute_command_new(
     let mut sarzak = table();
     sarzak["new"] = value(true);
     let mut table = table();
-    table["path"] = value(format!("models/{}", rust_name));
+    table["path"] = value(format!("models/{}.{}", rust_name, JSON_EXT));
     table["module"] = value(format!("{}", rust_name));
     table["sarzak"] = sarzak;
 
@@ -267,17 +252,6 @@ fn execute_command_new(
     // (panic) trying to read objects. In any case, code gen should
     // happen first.
 
-    // Generate code for the blank model? So that everything is happy?
-    //
-    // Yes!
-    // Mabye no...everything is already happy because lib.rs doesn't know about
-    // this module yet. I don't want to generate code because I'm tired of
-    // passing the same args to both functions.
-    // debug!("Generating 🧬 code!");
-    // if !test_mode {
-    //     generate_domain_code(&package_root, &model_file, meta, test_mode)?;
-    // }
-
     Ok(())
 }
 
@@ -324,15 +298,14 @@ fn generate_module_file(domain: &str) -> String {
 }
 
 fn execute_command_generate(
+    compiler: &Option<Compiler>,
     domains: &Option<Vec<String>>,
-    gen_dir: &Option<PathBuf>,
-    meta: &Option<bool>,
+    package_dir: &Option<PathBuf>,
     test_mode: bool,
-    doc_tests: &Option<bool>,
 ) -> Result<()> {
     // Find the package root
     //
-    let package_root = find_package_dir(gen_dir)?;
+    let package_root = find_package_dir(package_dir)?;
 
     // Open the config file
     //
@@ -345,6 +318,7 @@ fn execute_command_generate(
         .read_to_string(&mut toml)?;
 
     let config: Config = toml::from_str(&toml)?;
+    debug!("Loaded config 📝 file.");
 
     // Ensure that we can find the models directory
     //
@@ -354,34 +328,46 @@ fn execute_command_generate(
         model_dir.exists(),
         format!("😱 Unable to find models directory: {:?}.", model_dir)
     );
+    debug!("Found model ✈️  directory.");
 
-    // Ensure that we can find the model file(s)
-    //
+    // Process domains passed in on the command line.
     if let Some(domains) = domains {
         for domain in domains {
             // Spaces between commas in the domain specification result in spaces
             // in our domains list. Just skip.
             if domain != "" {
-                if let Some(domain_config) = config.domains.get(domain) {
+                if let Some(config) = config.domains.get(domain) {
                     let model_file = get_model_path(&model_dir, domain);
                     debug!("⭐️ Found {:?}!", model_file);
 
-                    let doc_tests =
-                        get_compiler_option(doc_tests, &domain_config.sarzak.doc_tests, &false);
-                    let meta = get_compiler_option(meta, &domain_config.sarzak.meta, &false);
+                    match compiler {
+                        Some(compiler) => match compiler {
+                            Compiler::Sarzak { options } => {
+                                invoke_model_compiler(
+                                    &compiler,
+                                    &package_root,
+                                    &model_file,
+                                    test_mode,
+                                    &config.module,
+                                    domain,
+                                )?;
+                            }
+                        },
+                        None => {
+                            let compiler = Compiler::Sarzak {
+                                options: config.sarzak.clone(),
+                            };
 
-                    // I'm dereferencing bools. And making pointers out of them above. This is to
-                    // pass a reference to an option to a bool, rather than just, probably ,copying
-                    // it. There is something wrong with me. I'll clean this up later.
-                    generate_domain_code(
-                        &package_root,
-                        &model_file,
-                        *meta,
-                        test_mode,
-                        *doc_tests,
-                        &domain_config.module,
-                        domain,
-                    )?;
+                            invoke_model_compiler(
+                                &compiler,
+                                &package_root,
+                                &model_file,
+                                test_mode,
+                                &config.module,
+                                domain,
+                            )?;
+                        }
+                    }
                 } else {
                     // Why don't I just format one string and use it twice? Why write about it
                     // and not just do it? I'm feeling insolent. 🖕
@@ -402,15 +388,15 @@ fn execute_command_generate(
             let mut model_file = package_root.clone();
             model_file.push(&config.path);
 
-            let doc_tests = get_compiler_option(doc_tests, &config.sarzak.doc_tests, &false);
-            let meta = get_compiler_option(meta, &config.sarzak.meta, &false);
+            let compiler = Compiler::Sarzak {
+                options: config.sarzak.clone(),
+            };
 
-            generate_domain_code(
+            invoke_model_compiler(
+                &compiler,
                 &package_root,
                 &model_file,
-                *meta,
                 test_mode,
-                *doc_tests,
                 &config.module,
                 domain,
             )?;
@@ -420,54 +406,11 @@ fn execute_command_generate(
     Ok(())
 }
 
-/// Return the path to a domain model
-///
-fn get_model_path<S: AsRef<str>>(model_dir: &PathBuf, domain: S) -> PathBuf {
-    let mut model_file = model_dir.clone();
-    // Don't forget about the pop.
-    model_file.push("fubar");
-    model_file.set_file_name(domain.as_ref());
-    model_file.set_extension(JSON_EXT);
-
-    model_file
-}
-
-/// Weird function that needed a home
-///
-/// Given an optional command line argument, and an optional config file value,
-/// and a sensible default, return one of them. The priority is command line,
-/// config, default.
-///
-/// Right now all of my compiler options are bools. If don't know how general
-/// this will prove to be. Oh, I know. I can make it generic.
-///
-/// Probably this should end up living in some compiler.rs file when I suck out
-/// the code generation code into a compiler. I'm tempted to do it now, but I'm
-/// resisting. Maybe in the morning. But I want to get shit going, and I don't
-/// have but one compiler.
-///
-/// This is the ugliest type signature. I'm doing something ass-backwards.
-fn get_compiler_option<'a, T>(arg: &'a Option<T>, config: &'a Option<T>, default: &'a T) -> &'a T {
-    match arg {
-        Some(t) => t,
-        None => match config {
-            Some(t) => t,
-            None => default,
-        },
-    }
-}
-
-/// Generate types.rs, store.rs, and macros.rs
-///
-/// There is an assumption here that the model file is named the same as the
-/// module, and all of it's files. This assumption holds true assuming it was
-/// all setup with this program.
-fn generate_domain_code(
+fn invoke_model_compiler(
+    compiler: &Compiler,
     root: &PathBuf,
     model_file: &PathBuf,
-    meta: bool,
     test_mode: bool,
-    doc_tests: bool,
     module: &str,
     domain: &str,
 ) -> Result<()> {
@@ -490,35 +433,24 @@ fn generate_domain_code(
         anyhow::bail!(format!("😱 {:?} is not a json file!", model_file));
     }
 
-    // let mut output = root.clone();
-    // output.push(MODEL_DIR);
-    // output.push("fubar");
-    // output.set_file_name(&module);
-    // output.set_extension("sarzak");
-
-    println!("Generating 🧬 code for domain ✨{:?}✨!", domain);
-    debug!("Generating 🧬 code for domain, {:?}!", model_file);
-
-    let model = SarzakModel::load_cuckoo_model(&model_file).context("😱 reading model file")?;
-    // File::create(&output).context("couldn't open file for writing")?.to_json(&model);
-
     let mut module_path = root.clone();
     module_path.push("src");
     module_path.push(module);
 
     if !module_path.exists() {
         // Let the user clean this up...
-        let missive = format!("😱 module directory '{:?}' does not exist. Cannot continue. Clean things up and try again.", module_path);
+        let missive = format!("😱 module directory '{}' does not exist. Cannot continue. Clean things up and try again.", module_path.display());
         error!("{}", missive);
         eprint!("{}", missive);
 
         std::process::exit(MODULE_DIR_MISSING);
-
-        // fs::create_dir_all(&module_path).context(format!(
-        //     "😱 Failed to create module directory: {:?}.",
-        //     module_path
-        // ))?;
     }
+
+    debug!("Writing output to {}.", module_path.display());
+
+    // We have to add a bogus directory to the path so that set_file_name doesn't
+    // clobber our value.
+    module_path.push("bogus");
 
     let package = root
         .as_path()
@@ -528,35 +460,33 @@ fn generate_domain_code(
         .as_os_str()
         .to_string_lossy();
 
-    // generate types.rs
-    //
-    module_path.push("fubar");
-    module_path.set_file_name(TYPES);
-    module_path.set_extension(RS_EXT);
-    debug!("Writing 🖍️ {:?}!", module_path);
-    if !test_mode {
-        generate_types(&model, &module_path, &package, meta, doc_tests)?;
+    let model = SarzakModel::load_cuckoo_model(&model_file).context("😱 reading model file")?;
+
+    println!("Generating 🧬 code for domain ✨{}✨!", domain);
+    debug!("Generating 🧬 code for domain, {}!", model_file.display());
+
+    match compiler {
+        Compiler::Sarzak { options } => {
+            let compiler = sarzak_mc::ModelCompiler::new();
+            compiler
+                .compile(&model, &package, &module_path, Box::new(options), test_mode)
+                .map_err(anyhow::Error::msg)
+        }
     }
 
-    // generate store.rs
-    //
-    module_path.set_file_name(STORE);
-    module_path.set_extension(RS_EXT);
-    debug!("Writing ✏️ {:?}!", module_path);
-    if !test_mode {
-        generate_store(&model, &module_path, &package, meta, doc_tests)?;
-    }
+    // Ok(())
+}
 
-    // generate macros.rs
-    //
-    module_path.set_file_name(MACROS);
-    module_path.set_extension(RS_EXT);
-    debug!("Writing ✒️ {:?}!", module_path);
-    if !test_mode {
-        generate_macros(&model, &module_path, &package, meta, doc_tests)?;
-    }
+/// Return the path to a domain model
+///
+fn get_model_path<S: AsRef<str>>(model_dir: &PathBuf, domain: S) -> PathBuf {
+    let mut model_file = model_dir.clone();
+    // Don't forget about the pop.
+    model_file.push("fubar");
+    model_file.set_file_name(domain.as_ref());
+    model_file.set_extension(JSON_EXT);
 
-    Ok(())
+    model_file
 }
 
 fn find_package_dir(start_dir: &Option<PathBuf>) -> Result<PathBuf> {
