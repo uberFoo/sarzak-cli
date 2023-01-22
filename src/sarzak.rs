@@ -342,7 +342,7 @@ fn execute_command_generate(
 
                     match compiler {
                         Some(compiler) => match compiler {
-                            Compiler::Sarzak { options } => {
+                            Compiler::Sarzak { options: _ } => {
                                 invoke_model_compiler(
                                     &compiler,
                                     &package_root,

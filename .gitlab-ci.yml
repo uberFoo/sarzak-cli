@@ -3,4 +3,4 @@ build-and-install:
   script:
    - cargo install --path .
   # Kick off a job to test sarzak.
-   - "curl -k -X POST --fail -F token=glptt-fa3631ca851fa84718fce5660a9020750c87276a -F ref=master https://git.uberfoo.com/api/v4/projects/50/trigger/pipeline"
+   - "curl -k -X POST --fail -F token=glptt-fa3631ca851fa84718fce5660a9020750c87276a -F ref=develop https://git.uberfoo.com/api/v4/projects/50/trigger/pipeline"
