@@ -13,18 +13,18 @@ use clap::{ArgAction, Parser, Subcommand};
 use heck::{ToSnakeCase, ToTitleCase};
 use log::{debug, error, warn};
 use pretty_env_logger;
-use toml;
-use toml_edit::{table, value, Document};
+use toml::{Table, Value};
 use uuid::Uuid;
 
 use nut::codegen::{emitln, CachingContext, SarzakModel};
 use nut::sarzak::mc::SarzakModelCompiler;
 
+use grace::GraceCompilerOptions;
 use sarzak_mc::SarzakCompilerOptions;
 
-use sarzak_cli::config::Config;
+use sarzak_cli::config::{Compiler as CompilerOptions, Config, DomainConfig};
 
-const CONFIG: &str = "sarzak.toml";
+const SARZAK_CONFIG_TOML: &str = "sarzak.toml";
 
 const BLANK_MODEL: &str = include_str!("../models/blank.json");
 const MODEL_DIR: &str = "models";
@@ -37,7 +37,7 @@ const MODULE_DIR_MISSING: i32 = -2;
 const NOTHING_TO_DO: i32 = -3;
 
 #[derive(Debug, Parser)]
-#[command(author, version, about)]
+#[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
 struct Args {
     /// Test mode
@@ -97,9 +97,21 @@ enum Command {
 
 #[derive(Debug, Subcommand)]
 enum Compiler {
+    /// Sarzak Model Compiler
+    ///
+    /// This is the first model compiler, based off of nut. It generates domain
+    /// types, relationship macros, and an object store. It will be deprecated.
     Sarzak {
         #[command(flatten)]
         options: SarzakCompilerOptions,
+    },
+    /// Grate Model Compiler
+    ///
+    /// This is a feature-rich, general purpose model compiler that generates
+    /// Rust code.
+    Grace {
+        #[command(flatten)]
+        options: GraceCompilerOptions,
     },
 }
 
@@ -134,26 +146,42 @@ fn execute_command_new(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> 
     // Update te config file
     //
     let mut config_path = package_root.clone();
-    config_path.push(CONFIG);
+    config_path.push(SARZAK_CONFIG_TOML);
 
+    // We create the file here because below we open it for editing, and it's
+    // easier to create a file with the [domains] table.
     if !config_path.exists() {
         // Create the config file
-        debug!("💥 Creating sarzak.toml.");
+        debug!("💥 Creating {}.", SARZAK_CONFIG_TOML);
         let mut config = File::create(&config_path)?;
         config.write_all(b"[domains]")?;
     }
 
     let mut toml_string = String::new();
     File::open(&config_path)
-        .context("😱 unable to open sarzak.toml")?
+        .context(format!("😱 unable to open {}", SARZAK_CONFIG_TOML))?
         .read_to_string(&mut toml_string)?;
-    let mut config = toml_string.parse::<Document>()?;
+    let mut config = toml_string.parse::<Table>()?;
+    let domains = config
+        .get_mut("domains")
+        .expect(
+            format!(
+                "There should be a [domains] table in {}.",
+                SARZAK_CONFIG_TOML
+            )
+            .as_str(),
+        )
+        .as_table_mut()
+        .unwrap();
 
     // Check to see if domain already exists
     //
-    match &config["domains"].get(&rust_name) {
+    match &domains.get(&rust_name) {
         Some(_) => {
-            let missive = format!("😱 domain '{}' already exists in sarzak.toml!", rust_name);
+            let missive = format!(
+                "😱 domain '{}' already exists in {}!",
+                rust_name, SARZAK_CONFIG_TOML
+            );
             error!("{}", &missive);
             eprintln!("{}", missive);
             std::process::exit(DOMAIN_EXISTS);
@@ -161,28 +189,22 @@ fn execute_command_new(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> 
         None => {}
     }
 
-    // I don't know what this is about, but I can't just do `table["sarzak"] = table();`,
-    // and I can't even move the following line further down by where it's used.
-    // Weird.
-    let mut sarzak = table();
-    sarzak["new"] = value(true);
-    let mut table = table();
-    table["path"] = value(format!("models/{}.{}", rust_name, JSON_EXT));
-    table["module"] = value(format!("{}", rust_name));
-    table["sarzak"] = sarzak;
+    let options = CompilerOptions::Grace(GraceCompilerOptions::default());
+    let domain_config = DomainConfig {
+        path: format!("models/{}.{}", rust_name, JSON_EXT).into(),
+        module: rust_name.clone(),
+        compiler: options,
+    };
 
-    config["domains"][&rust_name] = table;
+    domains.insert(rust_name.clone(), Value::try_from(domain_config).unwrap());
 
-    // This doesn't work, for reasons beyond my ken.
-    config["domains"][&rust_name]
-        .as_inline_table_mut()
-        .map(|t| t.fmt());
-
-    let mut toml_file =
-        File::create(&config_path).context("😱 unable to open sarzak.toml for writing")?;
+    let mut toml_file = File::create(&config_path).context(format!(
+        "😱 unable to open {} for writing",
+        SARZAK_CONFIG_TOML
+    ))?;
     toml_file
         .write_all(config.to_string().as_bytes())
-        .context("😱 unable to write sarzak.toml!")?;
+        .context(format!("😱 unable to write {}!", SARZAK_CONFIG_TOML))?;
 
     println!(
         "Creating new domain ✨{}✨ in {}❗️",
@@ -310,11 +332,11 @@ fn execute_command_generate(
     // Open the config file
     //
     let mut config_path = package_root.clone();
-    config_path.push(CONFIG);
+    config_path.push(SARZAK_CONFIG_TOML);
 
     let mut toml = String::new();
     File::open(&config_path)
-        .context("😱 unable to open sarzak.toml")?
+        .context(format!("😱 unable to open {}", SARZAK_CONFIG_TOML))?
         .read_to_string(&mut toml)?;
 
     let config: Config = toml::from_str(&toml)?;
@@ -336,10 +358,14 @@ fn execute_command_generate(
             // Spaces between commas in the domain specification result in spaces
             // in our domains list. Just skip.
             if domain != "" {
-                if let Some(config) = config.domains.get(domain) {
+                if let Some(domain_config) = config.domains.get(domain) {
                     let model_file = get_model_path(&model_dir, domain);
                     debug!("⭐️ Found {:?}!", model_file);
 
+                    // We are matching on the compiler that may have been sent
+                    // as a parameter. If it is_some() then it was passed in
+                    // on the command line. If it's None, we read the value
+                    // from sarzak.toml.
                     match compiler {
                         Some(compiler) => match compiler {
                             Compiler::Sarzak { options: _ } => {
@@ -348,14 +374,29 @@ fn execute_command_generate(
                                     &package_root,
                                     &model_file,
                                     test_mode,
-                                    &config.module,
+                                    &domain_config.module,
+                                    domain,
+                                )?;
+                            }
+                            Compiler::Grace { options: _ } => {
+                                invoke_model_compiler(
+                                    &compiler,
+                                    &package_root,
+                                    &model_file,
+                                    test_mode,
+                                    &domain_config.module,
                                     domain,
                                 )?;
                             }
                         },
                         None => {
-                            let compiler = Compiler::Sarzak {
-                                options: config.sarzak.clone(),
+                            let compiler = match &domain_config.compiler {
+                                CompilerOptions::Sarzak(options) => Compiler::Sarzak {
+                                    options: options.clone(),
+                                },
+                                CompilerOptions::Grace(options) => Compiler::Grace {
+                                    options: options.clone(),
+                                },
                             };
 
                             invoke_model_compiler(
@@ -363,7 +404,7 @@ fn execute_command_generate(
                                 &package_root,
                                 &model_file,
                                 test_mode,
-                                &config.module,
+                                &domain_config.module,
                                 domain,
                             )?;
                         }
@@ -371,15 +412,24 @@ fn execute_command_generate(
                 } else {
                     // Why don't I just format one string and use it twice? Why write about it
                     // and not just do it? I'm feeling insolent. 🖕
-                    eprintln!("😱 No domain named {} found in {}!", domain, CONFIG);
-                    warn!("did not find {} in {}", domain, CONFIG);
+                    eprintln!(
+                        "😱 No domain named {} found in {}!",
+                        domain, SARZAK_CONFIG_TOML
+                    );
+                    warn!("did not find {} in {}", domain, SARZAK_CONFIG_TOML);
                 }
             }
         }
     } else {
+        // No domains were passed in via the command line. Use the sarzak.toml
+        // file for domains.
+
         if config.domains.len() == 0 {
-            eprintln!("Nothing to do. Maybe specify a domain in sarzak.toml?");
-            warn!("empty domains in sarzak.toml");
+            eprintln!(
+                "Nothing to do. Maybe specify a domain in {}?",
+                SARZAK_CONFIG_TOML
+            );
+            warn!("empty domains in {}", SARZAK_CONFIG_TOML);
 
             std::process::exit(NOTHING_TO_DO);
         }
@@ -388,8 +438,13 @@ fn execute_command_generate(
             let mut model_file = package_root.clone();
             model_file.push(&config.path);
 
-            let compiler = Compiler::Sarzak {
-                options: config.sarzak.clone(),
+            let compiler = match &config.compiler {
+                CompilerOptions::Sarzak(options) => Compiler::Sarzak {
+                    options: options.clone(),
+                },
+                CompilerOptions::Grace(options) => Compiler::Grace {
+                    options: options.clone(),
+                },
             };
 
             invoke_model_compiler(
@@ -468,6 +523,12 @@ fn invoke_model_compiler(
     match compiler {
         Compiler::Sarzak { options } => {
             let compiler = sarzak_mc::ModelCompiler::new();
+            compiler
+                .compile(&model, &package, &module_path, Box::new(options), test_mode)
+                .map_err(anyhow::Error::msg)
+        }
+        Compiler::Grace { options } => {
+            let compiler = grace::ModelCompiler::default();
             compiler
                 .compile(&model, &package, &module_path, Box::new(options), test_mode)
                 .map_err(anyhow::Error::msg)
