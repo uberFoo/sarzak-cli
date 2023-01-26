@@ -1,0 +1,23 @@
+[package]
+name = "sarzak-cli"
+version = "1.0.0"
+authors = ["Keith T. Star <uberfoo@me.com>"]
+edition = "2021"
+
+[[bin]]
+name = "sarzak"
+path = "src/sarzak.rs"
+
+[dependencies]
+anyhow = "1.0.68"
+clap = { version = "4.0.32", features = ["derive"] }
+heck = "0.4.0"
+log = "0.4.17"
+# nut = { git = "ssh://git@git.uberfoo.com:30001/uberfoo/nut.git", branch = "develop" }
+nut = { path = "../nut" }
+sarzak-mc = { path = "../nut/crates/sarzak-mc" }
+pretty_env_logger = "0.4.0"
+serde = { version = "1.0.152", features = ["derive"] }
+toml = "0.5.10"
+toml_edit = "0.17.1"
+uuid = { version = "1.2.2", features = ["v5"] }
