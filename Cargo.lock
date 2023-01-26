@@ -199,7 +199,6 @@ name = "grace"
 version = "0.1.0"
 dependencies = [
  "clap 4.1.4",
- "nut",
  "sarzak",
  "serde",
 ]
@@ -338,7 +337,7 @@ dependencies = [
 
 [[package]]
 name = "nut"
-version = "0.5.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap 4.1.4",
@@ -530,7 +529,7 @@ checksum = "7b4b9743ed687d4b4bcedf9ff5eaa7398495ae14e61cba0a295704edbc7decde"
 
 [[package]]
 name = "sarzak"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "nut",
  "serde",
@@ -549,21 +548,10 @@ dependencies = [
  "log",
  "nut",
  "pretty_env_logger",
- "sarzak-mc",
+ "sarzak",
  "serde",
  "toml 0.6.0",
  "uuid",
-]
-
-[[package]]
-name = "sarzak-mc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap 4.1.4",
- "log",
- "nut",
- "serde",
 ]
 
 [[package]]

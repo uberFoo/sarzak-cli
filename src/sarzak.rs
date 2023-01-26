@@ -16,11 +16,10 @@ use pretty_env_logger;
 use toml::{Table, Value};
 use uuid::Uuid;
 
-use nut::codegen::{emitln, CachingContext, SarzakModel};
-use nut::sarzak::mc::SarzakModelCompiler;
+use nut::codegen::{emitln, CachingContext};
+use sarzak::{domain::DomainBuilder, mc::SarzakModelCompiler};
 
 use grace::GraceCompilerOptions;
-use sarzak_mc::SarzakCompilerOptions;
 
 use sarzak_cli::config::{Compiler as CompilerOptions, Config, DomainConfig};
 
@@ -97,14 +96,6 @@ enum Command {
 
 #[derive(Debug, Subcommand)]
 enum Compiler {
-    /// Sarzak Model Compiler
-    ///
-    /// This is the first model compiler, based off of nut. It generates domain
-    /// types, relationship macros, and an object store. It will be deprecated.
-    Sarzak {
-        #[command(flatten)]
-        options: SarzakCompilerOptions,
-    },
     /// Grate Model Compiler
     ///
     /// This is a feature-rich, general purpose model compiler that generates
@@ -368,16 +359,6 @@ fn execute_command_generate(
                     // from sarzak.toml.
                     match compiler {
                         Some(compiler) => match compiler {
-                            Compiler::Sarzak { options: _ } => {
-                                invoke_model_compiler(
-                                    &compiler,
-                                    &package_root,
-                                    &model_file,
-                                    test_mode,
-                                    &domain_config.module,
-                                    domain,
-                                )?;
-                            }
                             Compiler::Grace { options: _ } => {
                                 invoke_model_compiler(
                                     &compiler,
@@ -391,9 +372,6 @@ fn execute_command_generate(
                         },
                         None => {
                             let compiler = match &domain_config.compiler {
-                                CompilerOptions::Sarzak(options) => Compiler::Sarzak {
-                                    options: options.clone(),
-                                },
                                 CompilerOptions::Grace(options) => Compiler::Grace {
                                     options: options.clone(),
                                 },
@@ -439,9 +417,6 @@ fn execute_command_generate(
             model_file.push(&config.path);
 
             let compiler = match &config.compiler {
-                CompilerOptions::Sarzak(options) => Compiler::Sarzak {
-                    options: options.clone(),
-                },
                 CompilerOptions::Grace(options) => Compiler::Grace {
                     options: options.clone(),
                 },
@@ -515,18 +490,16 @@ fn invoke_model_compiler(
         .as_os_str()
         .to_string_lossy();
 
-    let model = SarzakModel::load_cuckoo_model(&model_file).context("😱 reading model file")?;
+    let model = DomainBuilder::new()
+        .cuckoo_model(&model_file)
+        .context("😱 reading model file")?
+        .build()
+        .context("💥 building domain")?;
 
     println!("Generating 🧬 code for domain ✨{}✨!", domain);
     debug!("Generating 🧬 code for domain, {}!", model_file.display());
 
     match compiler {
-        Compiler::Sarzak { options } => {
-            let compiler = sarzak_mc::ModelCompiler::new();
-            compiler
-                .compile(&model, &package, &module_path, Box::new(options), test_mode)
-                .map_err(anyhow::Error::msg)
-        }
         Compiler::Grace { options } => {
             let compiler = grace::ModelCompiler::default();
             compiler
