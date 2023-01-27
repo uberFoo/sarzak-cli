@@ -271,6 +271,9 @@ fn execute_command_new(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> 
 /// Generate a <domain>.rs file
 ///
 /// I guess this would have made a good template.
+///
+/// This needs to be moved to the compiler. It should be responsible for creating
+/// _all_ source code in it's module.
 fn generate_module_file(domain: &str) -> String {
     let mut context = CachingContext::new();
 
