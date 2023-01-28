@@ -85,7 +85,7 @@ enum Command {
         ///
         /// The comma separated list of domains for which code will be generated.
         /// If this argument is not included, and there are multiple domain models,
-        /// then code will be generated for all models in the domain.
+        /// then code will be generated for all models in the package.
         #[arg(long, short, use_value_delimiter = true, value_delimiter = ',')]
         domains: Option<Vec<String>>,
 

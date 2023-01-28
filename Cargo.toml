@@ -13,8 +13,8 @@ anyhow = "1.0.68"
 clap = { version = "4.0.32", features = ["derive"] }
 heck = "0.4.0"
 log = "0.4.17"
-# nut = { git = "ssh://git@git.uberfoo.com:30001/uberfoo/nut.git", branch = "develop" }
-nut = { path = "../nut" }
+nut = { git = "ssh://git@git.uberfoo.com:30001/uberfoo/nut.git", branch = "develop" }
+# nut = { path = "../nut" }
 sarzak = { path = "../sarzak" }
 grace = { path = "../grace" }
 pretty_env_logger = "0.4.0"
