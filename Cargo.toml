@@ -14,9 +14,11 @@ clap = { version = "4.0.32", features = ["derive"] }
 heck = "0.4.0"
 log = "0.4.17"
 nut = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/nut.git", branch = "develop" }
+sarzak = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/sarzak.git", branch = "develop" }
+grace = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/grace.git", branch = "develop" }
 # nut = { path = "../nut" }
-sarzak = { path = "../sarzak" }
-grace = { path = "../grace" }
+# sarzak = { path = "../sarzak" }
+# grace = { path = "../grace" }
 pretty_env_logger = "0.4.0"
 serde = { version = "1.0.152", features = ["derive"] }
 toml = "0.6.0"

@@ -197,11 +197,12 @@ dependencies = [
 [[package]]
 name = "grace"
 version = "0.1.0"
+source = "git+https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/grace.git?branch=develop#4b72b9d4835770bf4b6ba46cc30695b17ea2a2cb"
 dependencies = [
  "clap 4.1.4",
  "heck",
  "log",
- "sarzak 1.0.0 (git+https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/sarzak.git?branch=develop)",
+ "sarzak",
  "serde",
  "serde_json",
  "snafu",
@@ -537,17 +538,6 @@ checksum = "7b4b9743ed687d4b4bcedf9ff5eaa7398495ae14e61cba0a295704edbc7decde"
 [[package]]
 name = "sarzak"
 version = "1.0.0"
-dependencies = [
- "log",
- "nut",
- "serde",
- "snafu",
- "uuid",
-]
-
-[[package]]
-name = "sarzak"
-version = "1.0.0"
 source = "git+https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/sarzak.git?branch=develop#07f8da3ad332b98df2665474b9874dc505419ae2"
 dependencies = [
  "log",
@@ -568,7 +558,7 @@ dependencies = [
  "log",
  "nut",
  "pretty_env_logger",
- "sarzak 1.0.0",
+ "sarzak",
  "serde",
  "toml 0.6.0",
  "uuid",
