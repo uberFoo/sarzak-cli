@@ -201,7 +201,7 @@ dependencies = [
  "clap 4.1.4",
  "heck",
  "log",
- "sarzak",
+ "sarzak 1.0.0 (git+https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/sarzak.git?branch=develop)",
  "serde",
  "serde_json",
  "snafu",
@@ -345,29 +345,6 @@ dependencies = [
 name = "nut"
 version = "1.0.0"
 source = "git+https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/nut.git?branch=develop#159cc4a397caa64d62b5f092e242b088eb9f0a37"
-dependencies = [
- "anyhow",
- "clap 4.1.4",
- "diff",
- "heck",
- "log",
- "names",
- "quote",
- "rand",
- "random-string",
- "serde",
- "serde_json",
- "snafu",
- "tempfile",
- "toml 0.5.10",
- "unicode-segmentation",
- "uuid",
-]
-
-[[package]]
-name = "nut"
-version = "1.0.0"
-source = "git+ssh://git@git.uberfoo.com:30001/uberfoo/nut.git?branch=develop#159cc4a397caa64d62b5f092e242b088eb9f0a37"
 dependencies = [
  "anyhow",
  "clap 4.1.4",
@@ -562,7 +539,19 @@ name = "sarzak"
 version = "1.0.0"
 dependencies = [
  "log",
- "nut 1.0.0 (git+https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/nut.git?branch=develop)",
+ "nut",
+ "serde",
+ "snafu",
+ "uuid",
+]
+
+[[package]]
+name = "sarzak"
+version = "1.0.0"
+source = "git+https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/sarzak.git?branch=develop#07f8da3ad332b98df2665474b9874dc505419ae2"
+dependencies = [
+ "log",
+ "nut",
  "serde",
  "snafu",
  "uuid",
@@ -577,9 +566,9 @@ dependencies = [
  "grace",
  "heck",
  "log",
- "nut 1.0.0 (git+ssh://git@git.uberfoo.com:30001/uberfoo/nut.git?branch=develop)",
+ "nut",
  "pretty_env_logger",
- "sarzak",
+ "sarzak 1.0.0",
  "serde",
  "toml 0.6.0",
  "uuid",

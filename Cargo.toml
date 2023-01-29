@@ -13,7 +13,7 @@ anyhow = "1.0.68"
 clap = { version = "4.0.32", features = ["derive"] }
 heck = "0.4.0"
 log = "0.4.17"
-nut = { git = "ssh://git@git.uberfoo.com:30001/uberfoo/nut.git", branch = "develop" }
+nut = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/nut.git", branch = "develop" }
 # nut = { path = "../nut" }
 sarzak = { path = "../sarzak" }
 grace = { path = "../grace" }
