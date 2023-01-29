@@ -6,18 +6,14 @@ use grace::GraceCompilerOptions;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
-    pub domains: HashMap<String, DomainConfig>,
+    pub modules: HashMap<String, ModuleConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct DomainConfig {
+pub struct ModuleConfig {
     /// Path to the model file
     ///
-    pub path: PathBuf,
-    /// Name of the generated module
-    ///
-    /// Defaults to the name of the domain.
-    pub module: String,
+    pub domain: PathBuf,
     /// The compiler to use for this domain
     ///
     pub compiler: Compiler,

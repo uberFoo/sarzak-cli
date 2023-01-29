@@ -7,6 +7,7 @@
             "88cd70e0-c065-5c4b-b1ce-69194ab4d0cb": {
                 "id": "88cd70e0-c065-5c4b-b1ce-69194ab4d0cb",
                 "domain_name": "Paper::blank",
+                "description": "A blank domain",
                 "domain_ns": "b49d6fe1-e5e9-5896-bd42-b72012429e52",
                 "width": 4000,
                 "height": 3200,

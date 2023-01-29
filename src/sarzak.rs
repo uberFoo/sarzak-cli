@@ -21,7 +21,7 @@ use sarzak::{domain::DomainBuilder, mc::SarzakModelCompiler};
 
 use grace::GraceCompilerOptions;
 
-use sarzak_cli::config::{Compiler as CompilerOptions, Config, DomainConfig};
+use sarzak_cli::config::{Compiler as CompilerOptions, Config, ModuleConfig};
 
 const SARZAK_CONFIG_TOML: &str = "sarzak.toml";
 
@@ -31,7 +31,7 @@ const MODEL_DIR: &str = "models";
 const JSON_EXT: &str = "json";
 
 // Exit codes
-const DOMAIN_EXISTS: i32 = -1;
+const MODULE_EXISTS: i32 = -1;
 const MODULE_DIR_MISSING: i32 = -2;
 const NOTHING_TO_DO: i32 = -3;
 
@@ -45,11 +45,17 @@ struct Args {
     #[clap(long, short, action=ArgAction::SetTrue)]
     test: bool,
 
+    /// Sarzak config file
+    ///
+    /// The name of the config file you'd like to use, defaults to sarzak.toml.
+    #[arg(long, short)]
+    config: Option<PathBuf>,
+
     /// Path to package
     ///
     /// If included, `sarzak` will create a new domain in the specified
     /// location. It must exist, and must be part of a Rust package.
-    #[arg(short, long)]
+    #[arg(long, short)]
     package_dir: Option<PathBuf>,
 
     #[command(subcommand)]
@@ -71,23 +77,27 @@ enum Command {
         ///
         /// The name of your new domain! Name it anything you like, although I
         /// haven't yet tried unicode... 🤔 One way or another we'll sort out
-        /// the name, and create a new Rust module. which will coincide with the name of
-        /// the Rust package. It will contain a blank model file the the `models`
+        /// the name, and create a new, blank model file the the `models`
         /// subdirectory.
         domain: String,
+        /// Module Name
+        ///
+        /// The name of the Rust module that will contain the generated source
+        /// code. If not supplied the module name will match the domain name.
+        module: Option<String>,
     },
     /// Generate code
     ///
     /// Generate domain code from the model.
     #[command(name = "gen")]
     Generate {
-        /// Domain name(s)
+        /// Module name(s)
         ///
-        /// The comma separated list of domains for which code will be generated.
-        /// If this argument is not included, and there are multiple domain models,
-        /// then code will be generated for all models in the package.
+        /// The comma separated list of modules for which code will be generated.
+        /// If this argument is not included, then all modules in the sarzak.toml
+        /// file will generated.
         #[arg(long, short, use_value_delimiter = true, value_delimiter = ',')]
-        domains: Option<Vec<String>>,
+        modules: Option<Vec<String>>,
 
         #[command(subcommand)]
         compiler: Option<Compiler>,
@@ -117,18 +127,36 @@ fn main() -> Result<()> {
         println!("Running in test mode 🧪.");
     }
 
+    if args.config.is_some() {
+        unimplemented!(
+            "Selecting an alternate {} file is pending.",
+            SARZAK_CONFIG_TOML
+        );
+    }
+
     match args.command {
-        Command::New { domain } => execute_command_new(&domain, &args.package_dir, args.test)?,
-        Command::Generate { compiler, domains } => {
-            execute_command_generate(&compiler, &domains, &args.package_dir, args.test)?
+        Command::New { domain, module } => {
+            execute_command_new(&domain, &module, &args.package_dir, args.test)?
+        }
+        Command::Generate { compiler, modules } => {
+            execute_command_generate(&compiler, &modules, &args.package_dir, args.test)?
         }
     }
 
     Ok(())
 }
 
-fn execute_command_new(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> Result<()> {
+fn execute_command_new(
+    domain: &str,
+    module: &Option<String>,
+    dir: &Option<PathBuf>,
+    test_mode: bool,
+) -> Result<()> {
     let rust_name = domain.to_snake_case();
+    let module_name = match module {
+        Some(m) => m.to_snake_case(),
+        None => rust_name.clone(),
+    };
 
     // Find the package root
     //
@@ -139,70 +167,71 @@ fn execute_command_new(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> 
     let mut config_path = package_root.clone();
     config_path.push(SARZAK_CONFIG_TOML);
 
-    // We create the file here because below we open it for editing, and it's
-    // easier to create a file with the [domains] table.
-    if !config_path.exists() {
-        // Create the config file
-        debug!("💥 Creating {}.", SARZAK_CONFIG_TOML);
-        let mut config = File::create(&config_path)?;
-        config.write_all(b"[domains]")?;
-    }
-
-    let mut toml_string = String::new();
-    File::open(&config_path)
-        .context(format!("😱 unable to open {}", SARZAK_CONFIG_TOML))?
-        .read_to_string(&mut toml_string)?;
-    let mut config = toml_string.parse::<Table>()?;
-    let domains = config
-        .get_mut("domains")
-        .expect(
-            format!(
-                "There should be a [domains] table in {}.",
-                SARZAK_CONFIG_TOML
-            )
-            .as_str(),
-        )
-        .as_table_mut()
-        .unwrap();
-
-    // Check to see if domain already exists
-    //
-    match &domains.get(&rust_name) {
-        Some(_) => {
-            let missive = format!(
-                "😱 domain '{}' already exists in {}!",
-                rust_name, SARZAK_CONFIG_TOML
-            );
-            error!("{}", &missive);
-            eprintln!("{}", missive);
-            std::process::exit(DOMAIN_EXISTS);
+    if !test_mode {
+        // We create the file here because below we open it for editing, and it's
+        // easier to create a file with the [domains] table.
+        if !config_path.exists() {
+            // Create the config file
+            debug!("💥 Creating {}.", SARZAK_CONFIG_TOML);
+            let mut config = File::create(&config_path)?;
+            config.write_all(b"[modules]")?;
         }
-        None => {}
+
+        let mut toml_string = String::new();
+        File::open(&config_path)
+            .context(format!("😱 unable to open {}", SARZAK_CONFIG_TOML))?
+            .read_to_string(&mut toml_string)?;
+        let mut config = toml_string.parse::<Table>()?;
+        let modules = config
+            .get_mut("modules")
+            .expect(
+                format!(
+                    "There should be a [modules] table in {}.",
+                    SARZAK_CONFIG_TOML
+                )
+                .as_str(),
+            )
+            .as_table_mut()
+            .unwrap();
+
+        // Check to see if domain already exists
+        //
+        match &modules.get(&module_name) {
+            Some(_) => {
+                let missive = format!(
+                    "😱 module '{}' already exists in {}!",
+                    rust_name, SARZAK_CONFIG_TOML
+                );
+                error!("{}", &missive);
+                eprintln!("{}", missive);
+                std::process::exit(MODULE_EXISTS);
+            }
+            None => {}
+        }
+
+        let options = CompilerOptions::Grace(GraceCompilerOptions::default());
+        let module_config = ModuleConfig {
+            domain: format!("models/{}.{}", rust_name, JSON_EXT).into(),
+            compiler: options,
+        };
+
+        modules.insert(module_name.clone(), Value::try_from(module_config).unwrap());
+
+        let mut toml_file = File::create(&config_path).context(format!(
+            "😱 unable to open {} for writing",
+            SARZAK_CONFIG_TOML
+        ))?;
+        toml_file
+            .write_all(config.to_string().as_bytes())
+            .context(format!("😱 unable to write {}!", SARZAK_CONFIG_TOML))?;
     }
-
-    let options = CompilerOptions::Grace(GraceCompilerOptions::default());
-    let domain_config = DomainConfig {
-        path: format!("models/{}.{}", rust_name, JSON_EXT).into(),
-        module: rust_name.clone(),
-        compiler: options,
-    };
-
-    domains.insert(rust_name.clone(), Value::try_from(domain_config).unwrap());
-
-    let mut toml_file = File::create(&config_path).context(format!(
-        "😱 unable to open {} for writing",
-        SARZAK_CONFIG_TOML
-    ))?;
-    toml_file
-        .write_all(config.to_string().as_bytes())
-        .context(format!("😱 unable to write {}!", SARZAK_CONFIG_TOML))?;
 
     println!(
         "Creating new domain ✨{}✨ in {}❗️",
         domain,
         package_root.to_string_lossy()
     );
-    println!("The module will be called ✨{}✨.", rust_name);
+    println!("The module will be called ✨{}✨.", module_name);
 
     // Write a blank model file.
     //
@@ -232,7 +261,7 @@ fn execute_command_new(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> 
     //
     let mut src_dir = package_root.clone();
     src_dir.push("src");
-    src_dir.push(&rust_name);
+    src_dir.push(&module_name);
     debug!("Creating module directory {:?}.", src_dir);
     if !test_mode {
         fs::create_dir(&src_dir)
@@ -241,8 +270,8 @@ fn execute_command_new(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> 
 
     // Generate a "module" .rs file
     //
-    debug!("Creating {}.rs. 🥳", rust_name);
-    src_dir.set_file_name(&rust_name);
+    debug!("Creating {}.rs. 🥳", module_name);
+    src_dir.set_file_name(&module_name);
     src_dir.set_extension("rs");
 
     if !test_mode {
@@ -315,7 +344,7 @@ fn generate_module_file(domain: &str) -> String {
 
 fn execute_command_generate(
     compiler: &Option<Compiler>,
-    domains: &Option<Vec<String>>,
+    modules: &Option<Vec<String>>,
     package_dir: &Option<PathBuf>,
     test_mode: bool,
 ) -> Result<()> {
@@ -336,24 +365,36 @@ fn execute_command_generate(
     let config: Config = toml::from_str(&toml)?;
     debug!("Loaded config 📝 file.");
 
-    // Ensure that we can find the models directory
-    //
-    let mut model_dir = package_root.clone();
-    model_dir.push(MODEL_DIR);
-    anyhow::ensure!(
-        model_dir.exists(),
-        format!("😱 Unable to find models directory: {:?}.", model_dir)
-    );
-    debug!("Found model ✈️  directory.");
+    // Process modules passed in on the command line.
+    if let Some(modules) = modules {
+        // Ensure that we can find the models directory
+        //
+        let mut model_dir = package_root.clone();
+        model_dir.push(MODEL_DIR);
+        anyhow::ensure!(
+            model_dir.exists(),
+            format!(
+                "😱 Unable to find models directory: {}.",
+                model_dir.display()
+            )
+        );
+        debug!("Found model ✈️  directory.");
 
-    // Process domains passed in on the command line.
-    if let Some(domains) = domains {
-        for domain in domains {
-            // Spaces between commas in the domain specification result in spaces
+        for module in modules {
+            // Spaces between commas in the module specification result in spaces
             // in our domains list. Just skip.
-            if domain != "" {
-                if let Some(domain_config) = config.domains.get(domain) {
-                    let model_file = get_model_path(&model_dir, domain);
+            // Last time I put spaces in the list, the parser failed. So this is wonky.
+            if module != "" {
+                if let Some(module_config) = config.modules.get(module) {
+                    let mut model_file = module_config.domain.clone();
+                    if !model_file.exists() {
+                        model_file = model_dir.clone();
+                        model_file.push(&module_config.domain);
+                        anyhow::ensure!(
+                            model_file.exists(),
+                            format!("😱 unable to load model {}", model_file.display())
+                        );
+                    }
                     debug!("⭐️ Found {:?}!", model_file);
 
                     // We are matching on the compiler that may have been sent
@@ -368,13 +409,12 @@ fn execute_command_generate(
                                     &package_root,
                                     &model_file,
                                     test_mode,
-                                    &domain_config.module,
-                                    domain,
+                                    &module,
                                 )?;
                             }
                         },
                         None => {
-                            let compiler = match &domain_config.compiler {
+                            let compiler = match &module_config.compiler {
                                 CompilerOptions::Grace(options) => Compiler::Grace {
                                     options: options.clone(),
                                 },
@@ -385,8 +425,7 @@ fn execute_command_generate(
                                 &package_root,
                                 &model_file,
                                 test_mode,
-                                &domain_config.module,
-                                domain,
+                                &module,
                             )?;
                         }
                     }
@@ -394,18 +433,18 @@ fn execute_command_generate(
                     // Why don't I just format one string and use it twice? Why write about it
                     // and not just do it? I'm feeling insolent. 🖕
                     eprintln!(
-                        "😱 No domain named {} found in {}!",
-                        domain, SARZAK_CONFIG_TOML
+                        "😱 No module named {} found in {}!",
+                        module, SARZAK_CONFIG_TOML
                     );
-                    warn!("did not find {} in {}", domain, SARZAK_CONFIG_TOML);
+                    warn!("did not find {} in {}", module, SARZAK_CONFIG_TOML);
                 }
             }
         }
     } else {
-        // No domains were passed in via the command line. Use the sarzak.toml
-        // file for domains.
+        // No modules were passed in via the command line. Use the sarzak.toml
+        // file for modules.
 
-        if config.domains.len() == 0 {
+        if config.modules.len() == 0 {
             eprintln!(
                 "Nothing to do. Maybe specify a domain in {}?",
                 SARZAK_CONFIG_TOML
@@ -414,10 +453,10 @@ fn execute_command_generate(
 
             std::process::exit(NOTHING_TO_DO);
         }
-        // Iterate over all of the model files in the config
-        for (domain, config) in &config.domains {
+        // Iterate over all of the modules files in the config
+        for (module, config) in &config.modules {
             let mut model_file = package_root.clone();
-            model_file.push(&config.path);
+            model_file.push(&config.domain);
 
             let compiler = match &config.compiler {
                 CompilerOptions::Grace(options) => Compiler::Grace {
@@ -425,14 +464,7 @@ fn execute_command_generate(
                 },
             };
 
-            invoke_model_compiler(
-                &compiler,
-                &package_root,
-                &model_file,
-                test_mode,
-                &config.module,
-                domain,
-            )?;
+            invoke_model_compiler(&compiler, &package_root, &model_file, test_mode, &module)?;
         }
     }
 
@@ -445,8 +477,13 @@ fn invoke_model_compiler(
     model_file: &PathBuf,
     test_mode: bool,
     module: &str,
-    domain: &str,
 ) -> Result<()> {
+    log::debug!(
+        "invoking model compiler `{:?}` on model `{}` for module `{}`",
+        compiler,
+        model_file.display(),
+        module
+    );
     // Check that the path exists, and that it's a file. From there we just
     // have to trust...
     anyhow::ensure!(
@@ -466,26 +503,14 @@ fn invoke_model_compiler(
         anyhow::bail!(format!("😱 {:?} is not a json file!", model_file));
     }
 
-    let mut module_path = root.clone();
-    module_path.push("src");
-    module_path.push(module);
-
-    if !module_path.exists() {
-        // Let the user clean this up...
-        let missive = format!("😱 module directory '{}' does not exist. Cannot continue. Clean things up and try again.", module_path.display());
-        error!("{}", missive);
-        eprint!("{}", missive);
-
-        std::process::exit(MODULE_DIR_MISSING);
-    }
-
-    debug!("Writing output to {}.", module_path.display());
+    let mut src_path = root.clone();
+    src_path.push("src");
 
     // We have to add a bogus directory to the path so that set_file_name doesn't
     // clobber our value.
-    module_path.push("bogus");
+    // module_path.push("bogus");
 
-    let package = root
+    let _package = root
         .as_path()
         .components()
         .last()
@@ -499,31 +524,21 @@ fn invoke_model_compiler(
         .build()
         .context("💥 building domain")?;
 
-    println!("Generating 🧬 code for domain ✨{}✨!", domain);
+    println!(
+        "Generating 🧬 code for module `{}` from domain ✨{}✨!",
+        module,
+        model_file.file_stem().unwrap().to_str().unwrap()
+    );
     debug!("Generating 🧬 code for domain, {}!", model_file.display());
 
     match compiler {
         Compiler::Grace { options } => {
             let compiler = grace::ModelCompiler::default();
             compiler
-                .compile(&model, &package, &module_path, Box::new(options), test_mode)
+                .compile(&model, &module, &src_path, Box::new(options), test_mode)
                 .map_err(anyhow::Error::msg)
         }
     }
-
-    // Ok(())
-}
-
-/// Return the path to a domain model
-///
-fn get_model_path<S: AsRef<str>>(model_dir: &PathBuf, domain: S) -> PathBuf {
-    let mut model_file = model_dir.clone();
-    // Don't forget about the pop.
-    model_file.push("fubar");
-    model_file.set_file_name(domain.as_ref());
-    model_file.set_extension(JSON_EXT);
-
-    model_file
 }
 
 fn find_package_dir(start_dir: &Option<PathBuf>) -> Result<PathBuf> {
