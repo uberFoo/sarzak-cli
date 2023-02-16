@@ -520,9 +520,7 @@ fn invoke_model_compiler(
 
     let model = DomainBuilder::new()
         .cuckoo_model(&model_file)
-        .context("😱 reading model file")?
-        .build()
-        .context("💥 building domain")?;
+        .context("😱 reading model file")?;
 
     println!(
         "Generating 🧬 code for module `{}` from domain ✨{}✨!",
@@ -535,7 +533,14 @@ fn invoke_model_compiler(
         Compiler::Grace { options } => {
             let compiler = grace::ModelCompiler::default();
             compiler
-                .compile(&model, &module, &src_path, Box::new(options), test_mode)
+                .compile(
+                    model,
+                    &root.file_stem().unwrap().to_str().unwrap(),
+                    &module,
+                    &src_path,
+                    Box::new(options),
+                    test_mode,
+                )
                 .map_err(anyhow::Error::msg)
         }
     }
