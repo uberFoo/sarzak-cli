@@ -211,7 +211,7 @@ fn execute_command_new(
 
         let options = CompilerOptions::Grace(GraceCompilerOptions::default());
         let module_config = ModuleConfig {
-            domain: format!("models/{}.{}", rust_name, JSON_EXT).into(),
+            model: format!("models/{}.{}", rust_name, JSON_EXT).into(),
             compiler: options,
         };
 
@@ -386,10 +386,10 @@ fn execute_command_generate(
             // Last time I put spaces in the list, the parser failed. So this is wonky.
             if module != "" {
                 if let Some(module_config) = config.modules.get(module) {
-                    let mut model_file = module_config.domain.clone();
+                    let mut model_file = module_config.model.clone();
                     if !model_file.exists() {
                         model_file = model_dir.clone();
-                        model_file.push(&module_config.domain);
+                        model_file.push(&module_config.model);
                         anyhow::ensure!(
                             model_file.exists(),
                             format!("😱 unable to load model {}", model_file.display())
@@ -456,7 +456,7 @@ fn execute_command_generate(
         // Iterate over all of the modules files in the config
         for (module, config) in &config.modules {
             let mut model_file = package_root.clone();
-            model_file.push(&config.domain);
+            model_file.push(&config.model);
 
             let compiler = match &config.compiler {
                 CompilerOptions::Grace(options) => Compiler::Grace {

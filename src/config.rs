@@ -13,7 +13,7 @@ pub struct Config {
 pub struct ModuleConfig {
     /// Path to the model file
     ///
-    pub domain: PathBuf,
+    pub model: PathBuf,
     /// The compiler to use for this domain
     ///
     pub compiler: Compiler,
