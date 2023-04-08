@@ -17,7 +17,7 @@ use toml::{Table, Value};
 use uuid::Uuid;
 
 use nut::codegen::{emitln, CachingContext};
-use sarzak::{domain::DomainBuilder, mc::SarzakModelCompiler};
+use sarzak::{domain::DomainBuilder, mc::SarzakModelCompiler, v2::domain::Domain};
 
 use grace::GraceCompilerOptions;
 
@@ -28,11 +28,12 @@ const SARZAK_CONFIG_TOML: &str = "sarzak.toml";
 const BLANK_MODEL: &str = include_str!("../models/blank.json");
 const MODEL_DIR: &str = "models";
 
+const METADATA_FILE: &str = "metadata.json";
+
 const JSON_EXT: &str = "json";
 
 // Exit codes
 const MODULE_EXISTS: i32 = -1;
-const MODULE_DIR_MISSING: i32 = -2;
 const NOTHING_TO_DO: i32 = -3;
 
 #[derive(Debug, Parser)]
@@ -179,18 +180,15 @@ fn execute_command_new(
 
         let mut toml_string = String::new();
         File::open(&config_path)
-            .context(format!("😱 unable to open {}", SARZAK_CONFIG_TOML))?
+            .context(format!(
+                "😱 unable to open configuration file: {}",
+                SARZAK_CONFIG_TOML
+            ))?
             .read_to_string(&mut toml_string)?;
         let mut config = toml_string.parse::<Table>()?;
         let modules = config
             .get_mut("modules")
-            .expect(
-                format!(
-                    "There should be a [modules] table in {}.",
-                    SARZAK_CONFIG_TOML
-                )
-                .as_str(),
-            )
+            .expect("There should be a [modules] table in the configuration.")
             .as_table_mut()
             .unwrap();
 
@@ -199,8 +197,8 @@ fn execute_command_new(
         match &modules.get(&module_name) {
             Some(_) => {
                 let missive = format!(
-                    "😱 module '{}' already exists in {}!",
-                    rust_name, SARZAK_CONFIG_TOML
+                    "😱 module '{}' already exists in the configuration!",
+                    rust_name
                 );
                 error!("{}", &missive);
                 eprintln!("{}", missive);
@@ -367,8 +365,6 @@ fn execute_command_generate(
 
     // Process modules passed in on the command line.
     if let Some(modules) = modules {
-        // Ensure that we can find the models directory
-        //
         let mut model_dir = package_root.clone();
         model_dir.push(MODEL_DIR);
         anyhow::ensure!(
@@ -503,24 +499,68 @@ fn invoke_model_compiler(
         anyhow::bail!(format!("😱 {:?} is not a json file!", model_file));
     }
 
+    // Here is where we can get the modification time of the model.
+    let model_metadata = fs::metadata(model_file).context("😱 reading model metadata")?;
+    let model_modified = model_metadata
+        .modified()
+        .context("😱 reading model modified time")?;
+
+    // We want to compare it to the modification time of the v2 model. Only
+    // continue if the model is newer.
+    // Ensure that we can find the models directory
+    //
+    let mut v2_model = root.clone();
+    v2_model.push(MODEL_DIR);
+    anyhow::ensure!(
+        v2_model.exists(),
+        format!("😱 Unable to find model directory: {}.", v2_model.display())
+    );
+    debug!("Found model ✈️  directory.");
+
+    let model_name = model_file.file_stem().unwrap().to_str().unwrap();
+    let v2_model_name = format!("{}.v2.{}", model_name, JSON_EXT);
+    v2_model.push(v2_model_name);
+
+    let model = if !v2_model.exists() {
+        // If the v2 model doesn't exist, we need to create it.
+        let model = DomainBuilder::new()
+            .cuckoo_model(&model_file)
+            .context("😱 reading model file")?
+            .build_v2()
+            .context("😱 building domain")?;
+
+        model.persist(v2_model).context("😱 persisting model")?;
+
+        model
+    } else {
+        let mut metadata_path = v2_model.clone();
+        metadata_path.push(METADATA_FILE);
+        let v2_model_metadata = fs::metadata(&metadata_path).context(format!(
+            "😱 reading v2 model metadata: {}",
+            metadata_path.display()
+        ))?;
+        let v2_model_modified = v2_model_metadata
+            .modified()
+            .context("😱 reading v2 model modified time")?;
+
+        if model_modified > v2_model_modified {
+            let model = DomainBuilder::new()
+                .cuckoo_model(&model_file)
+                .context("😱 reading model file")?
+                .build_v2()
+                .context("😱 building domain")?;
+
+            // 🚧 This is great for adding files, but how do we remove them?
+            model.persist(v2_model).context("😱 persisting model")?;
+
+            model
+        } else {
+            Domain::load(&v2_model).context(format!("😱 loading model: {}", v2_model.display()))?
+        }
+    };
+
     let mut src_path = root.clone();
     src_path.push("src");
-
-    // We have to add a bogus directory to the path so that set_file_name doesn't
-    // clobber our value.
-    // module_path.push("bogus");
-
-    let _package = root
-        .as_path()
-        .components()
-        .last()
-        .unwrap()
-        .as_os_str()
-        .to_string_lossy();
-
-    let model = DomainBuilder::new()
-        .cuckoo_model(&model_file)
-        .context("😱 reading model file")?;
 
     println!(
         "Generating 🧬 code for module `{}` from domain ✨{}✨!",
