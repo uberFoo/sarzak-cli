@@ -396,6 +396,7 @@ checksum = "ad0a93d233ebf96623465aad4046a8d3aa4da22d4f4beba5388838c8a434bbb4"
 [[package]]
 name = "grace"
 version = "0.2.1"
+source = "git+https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/grace.git?branch=develop#d5459a01cf62567f5d578b253d8919566651041e"
 dependencies = [
  "chrono",
  "clap 4.1.6",
