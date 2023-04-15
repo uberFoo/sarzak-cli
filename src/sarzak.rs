@@ -8,14 +8,16 @@ use std::{
     process,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use heck::{ToSnakeCase, ToTitleCase};
 use log::{debug, error, warn};
 use pretty_env_logger;
 use toml::{Table, Value};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use uuid::Uuid;
 
+// 🚧 this just needs to go away.
 use nut::codegen::{emitln, CachingContext};
 use sarzak::{
     domain::DomainBuilder,
@@ -108,6 +110,21 @@ enum Command {
         #[command(subcommand)]
         compiler: Option<Compiler>,
     },
+    /// Display a model
+    ///
+    /// This command will display a model in a new browser window.
+    #[cfg(feature = "gui")]
+    Show {
+        /// Model file
+        ///
+        /// If you are in the root of the package, i.e., there is a "models"
+        /// subdirectory, then just a domain name will suffice.
+        ///
+        /// Otherwise, this needs to be a path to a model file.
+        ///
+        /// In either case, the ".json" extension is optional.
+        domain: String,
+    },
 }
 
 /// Compiler enum for parsing compiler options
@@ -120,7 +137,7 @@ enum Command {
 ///
 /// 🚧 One of these days, I'd love for someone, maybe even me, to sort this out
 /// and maybe make it less redundant.
-#[derive(Debug, Subcommand)]
+#[derive(Clone, Debug, Subcommand)]
 enum Compiler {
     /// Grace Model Compiler
     ///
@@ -142,7 +159,11 @@ enum Compiler {
 }
 
 fn main() -> Result<()> {
-    pretty_env_logger::init();
+    // pretty_env_logger::init();
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
 
     let args = Args::parse();
 
@@ -166,9 +187,56 @@ fn main() -> Result<()> {
         Command::Generate { compiler, modules } => {
             execute_command_generate(&compiler, &modules, &args.package_dir, args.test)?
         }
+        #[cfg(feature = "gui")]
+        Command::Show { domain } => execute_command_show(&domain, &args.package_dir, args.test)?,
     }
 
     Ok(())
+}
+
+#[cfg(feature = "gui")]
+fn execute_command_show(domain: &str, dir: &Option<PathBuf>, test_mode: bool) -> Result<()> {
+    let package_root = find_package_dir(dir)?;
+
+    let mut model_path = package_root.clone();
+    model_path.push(MODEL_DIR);
+    if domain.ends_with(JSON_EXT) {
+        model_path.push(domain);
+    } else {
+        model_path.push(format!("{}.{}", domain, JSON_EXT));
+    }
+
+    let model_path = if !model_path.exists() {
+        let mut model_path = package_root.clone();
+        if domain.ends_with(JSON_EXT) {
+            model_path.push(domain);
+        } else {
+            model_path.push(format!("{}.{}", domain, JSON_EXT));
+        }
+
+        if !model_path.exists() {
+            return Err(anyhow!("Unable to find model file for domain {}", domain));
+        } else {
+            model_path
+        }
+    } else {
+        model_path
+    };
+
+    if test_mode {
+        println!("Would open model file {}", model_path.display());
+        return Ok(());
+    }
+
+    println!("Opening model file {}", model_path.display());
+
+    let model = DomainBuilder::new()
+        .cuckoo_model(&model_path)
+        .context("😱 reading model file")?
+        .build_v2()
+        .context("😱 building domain")?;
+
+    sarzak_cli::boink::boink_main(model).map_err(|e| anyhow!("{}", e))
 }
 
 fn execute_command_new(
@@ -380,6 +448,7 @@ fn execute_command_generate(
     config_path.push(SARZAK_CONFIG_TOML);
 
     let mut toml = String::new();
+    // 🚧 We should be able to do something without a config file.
     File::open(&config_path)
         .context(format!("😱 unable to open {}", SARZAK_CONFIG_TOML))?
         .read_to_string(&mut toml)?;
@@ -489,13 +558,17 @@ fn execute_command_generate(
             let mut model_file = package_root.clone();
             model_file.push(&config.model);
 
-            let compiler = match &config.compiler {
-                CompilerOptions::Grace(options) => Compiler::Grace {
-                    options: options.clone(),
-                },
-                CompilerOptions::Dwarf(options) => Compiler::Dwarf {
-                    options: options.clone(),
-                },
+            let compiler: Compiler = if let Some(compiler) = &compiler {
+                compiler.clone()
+            } else {
+                match &config.compiler {
+                    CompilerOptions::Grace(options) => Compiler::Grace {
+                        options: options.clone(),
+                    },
+                    CompilerOptions::Dwarf(options) => Compiler::Dwarf {
+                        options: options.clone(),
+                    },
+                }
             };
 
             invoke_model_compiler(&compiler, &package_root, &model_file, test_mode, &module)?;
