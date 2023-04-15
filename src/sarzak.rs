@@ -17,7 +17,12 @@ use toml::{Table, Value};
 use uuid::Uuid;
 
 use nut::codegen::{emitln, CachingContext};
-use sarzak::{domain::DomainBuilder, mc::SarzakModelCompiler, v2::domain::Domain};
+use sarzak::{
+    domain::DomainBuilder,
+    dwarf::{parse_dwarf, populate_lu_dog, DwarfOptions},
+    mc::SarzakModelCompiler,
+    v2::domain::Domain,
+};
 
 use grace::GraceCompilerOptions;
 
@@ -105,15 +110,34 @@ enum Command {
     },
 }
 
+/// Compiler enum for parsing compiler options
+///
+/// This is clumsy. Notice that the compiler options need to be buried in an
+/// options field. I don't recall the reason, but it has to do with clap. The
+/// clumsy bit is that I've not a nearly identical thing defined over in the
+/// config module. Now, that over there had something to do with generating
+/// code on a per-module basis. And maybe also to do with the TOML config file.
+///
+/// 🚧 One of these days, I'd love for someone, maybe even me, to sort this out
+/// and maybe make it less redundant.
 #[derive(Debug, Subcommand)]
 enum Compiler {
-    /// Grate Model Compiler
+    /// Grace Model Compiler
     ///
     /// This is a feature-rich, general purpose model compiler that generates
-    /// Rust code.
+    /// Rust code -- for now. It's eventually going to be general purpose. Although
+    /// it might get archived before that happens...  You just never know.
     Grace {
         #[command(flatten)]
         options: GraceCompilerOptions,
+    },
+    /// Dwarf Language Compiler
+    ///
+    /// This compiles the dwarf code into a Lu-Dog model, which is basically an
+    /// AST.
+    Dwarf {
+        #[command(flatten)]
+        options: DwarfOptions,
     },
 }
 
@@ -408,12 +432,23 @@ fn execute_command_generate(
                                     &module,
                                 )?;
                             }
+                            Compiler::Dwarf { options: options } => {
+                                invoke_dwarf(
+                                    &options,
+                                    &package_root,
+                                    &model_file,
+                                    test_mode,
+                                    &module,
+                                )
+                                .map_err(anyhow::Error::msg)?;
+                            }
                         },
                         None => {
                             let compiler = match &module_config.compiler {
                                 CompilerOptions::Grace(options) => Compiler::Grace {
                                     options: options.clone(),
                                 },
+                                _ => todo!("What about other compilers?"),
                             };
 
                             invoke_model_compiler(
@@ -458,12 +493,25 @@ fn execute_command_generate(
                 CompilerOptions::Grace(options) => Compiler::Grace {
                     options: options.clone(),
                 },
+                CompilerOptions::Dwarf(options) => Compiler::Dwarf {
+                    options: options.clone(),
+                },
             };
 
             invoke_model_compiler(&compiler, &package_root, &model_file, test_mode, &module)?;
         }
     }
 
+    Ok(())
+}
+
+fn invoke_dwarf(
+    options: &DwarfOptions,
+    root: &PathBuf,
+    model_file: &PathBuf,
+    test_mode: bool,
+    module: &str,
+) -> Result<()> {
     Ok(())
 }
 
@@ -581,6 +629,10 @@ fn invoke_model_compiler(
                     Box::new(options),
                     test_mode,
                 )
+                .map_err(anyhow::Error::msg)
+        }
+        Compiler::Dwarf { options } => {
+            invoke_dwarf(&options, &root, &model_file, test_mode, &module)
                 .map_err(anyhow::Error::msg)
         }
     }
