@@ -2,8 +2,8 @@ use std::{collections::HashMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use chacha::dwarf::DwarfOptions;
 use grace::GraceCompilerOptions;
-use sarzak::dwarf::DwarfOptions;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {

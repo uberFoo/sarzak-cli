@@ -8,26 +8,20 @@ use std::{
     process,
 };
 
-use anyhow::{anyhow, Context, Result};
+use ansi_term::Colour;
+use anyhow::{Context, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use heck::{ToSnakeCase, ToTitleCase};
 use log::{debug, error, warn};
-use pretty_env_logger;
 use toml::{Table, Value};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use uuid::Uuid;
 
 // 🚧 this just needs to go away.
-use nut::codegen::{emitln, CachingContext};
-use sarzak::{
-    domain::DomainBuilder,
-    dwarf::{parse_dwarf, populate_lu_dog, DwarfOptions},
-    mc::SarzakModelCompiler,
-    v2::domain::Domain,
-};
-
+use chacha::dwarf::{parse_dwarf, populate_lu_dog, DwarfOptions};
 use grace::GraceCompilerOptions;
-
+use nut::codegen::{emitln, CachingContext};
+use sarzak::{domain::DomainBuilder, mc::SarzakModelCompiler, v2::domain::Domain};
 use sarzak_cli::config::{Compiler as CompilerOptions, Config, ModuleConfig};
 
 const SARZAK_CONFIG_TOML: &str = "sarzak.toml";
@@ -684,9 +678,9 @@ fn invoke_model_compiler(
     src_path.push("src");
 
     println!(
-        "Generating 🧬 code for module `{}` from domain ✨{}✨!",
-        module,
-        model_file.file_stem().unwrap().to_str().unwrap()
+        "\nGenerating 🧬 code for module `{}` from domain {}!",
+        Colour::Blue.paint(module),
+        Colour::Yellow.paint(model_file.file_stem().unwrap().to_str().unwrap())
     );
     debug!("Generating 🧬 code for domain, {}!", model_file.display());
 

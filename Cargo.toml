@@ -15,11 +15,12 @@ heck = "0.4.0"
 log = "0.4.17"
 # nut = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/nut.git", branch = "develop" }
 nut = { path = "../nut" }
+# chacha = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/chacha.git", branch = "develop" }
+chacha = { path = "../chacha" }
 # sarzak = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/sarzak.git", branch = "develop" }
 sarzak = { path = "../sarzak" }
 # grace = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/grace.git", branch = "develop" }
 grace = { path = "../grace" }
-pretty_env_logger = "0.4.0"
 serde = { version = "1.0.152", features = ["derive"] }
 toml = "0.6.0"
 uuid = { version = "1.2.2", features = ["v5"] }
@@ -30,6 +31,7 @@ eframe = { version = "0.21.0", default-features = false, features = [
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
 ], optional = true }
+ansi_term = "0.12.1"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
