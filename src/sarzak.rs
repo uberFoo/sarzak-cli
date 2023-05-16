@@ -5,7 +5,7 @@ use std::{
     io::{Read, Write},
     os::unix::ffi::OsStringExt,
     path::PathBuf,
-    process,
+    process, time,
 };
 
 use ansi_term::Colour;
@@ -451,6 +451,8 @@ fn execute_command_generate(
     debug!("Loaded config 📝 file.");
 
     // Process modules passed in on the command line.
+    let mut count = 0;
+    let now = time::Instant::now();
     if let Some(modules) = modules {
         let mut model_dir = package_root.clone();
         model_dir.push(MODEL_DIR);
@@ -484,27 +486,23 @@ fn execute_command_generate(
                     // as a parameter. If it is_some() then it was passed in
                     // on the command line. If it's None, we read the value
                     // from sarzak.toml.
-                    match compiler {
+                    count += match compiler {
                         Some(compiler) => match compiler {
-                            Compiler::Grace { options: _ } => {
-                                invoke_model_compiler(
-                                    &compiler,
-                                    &package_root,
-                                    &model_file,
-                                    test_mode,
-                                    &module,
-                                )?;
-                            }
-                            Compiler::Dwarf { options: options } => {
-                                invoke_dwarf(
-                                    &options,
-                                    &package_root,
-                                    &model_file,
-                                    test_mode,
-                                    &module,
-                                )
-                                .map_err(anyhow::Error::msg)?;
-                            }
+                            Compiler::Grace { options: _ } => invoke_model_compiler(
+                                &compiler,
+                                &package_root,
+                                &model_file,
+                                test_mode,
+                                &module,
+                            )?,
+                            Compiler::Dwarf { options: options } => invoke_dwarf(
+                                &options,
+                                &package_root,
+                                &model_file,
+                                test_mode,
+                                &module,
+                            )
+                            .map_err(anyhow::Error::msg)?,
                         },
                         None => {
                             let compiler = match &module_config.compiler {
@@ -520,9 +518,9 @@ fn execute_command_generate(
                                 &model_file,
                                 test_mode,
                                 &module,
-                            )?;
+                            )?
                         }
-                    }
+                    };
                 } else {
                     // Why don't I just format one string and use it twice? Why write about it
                     // and not just do it? I'm feeling insolent. 🖕
@@ -565,9 +563,20 @@ fn execute_command_generate(
                 }
             };
 
-            invoke_model_compiler(&compiler, &package_root, &model_file, test_mode, &module)?;
+            count +=
+                invoke_model_compiler(&compiler, &package_root, &model_file, test_mode, &module)?;
         }
-    }
+    };
+
+    let later = time::Instant::now();
+    println!(
+        "{}",
+        Colour::Green.paint(format!(
+            "\nGenerated {} files in {:0.2} seconds",
+            count,
+            later.duration_since(now).as_secs_f32()
+        ))
+    );
 
     Ok(())
 }
@@ -578,8 +587,8 @@ fn invoke_dwarf(
     model_file: &PathBuf,
     test_mode: bool,
     module: &str,
-) -> Result<()> {
-    Ok(())
+) -> Result<usize> {
+    Ok(0)
 }
 
 fn invoke_model_compiler(
@@ -588,7 +597,7 @@ fn invoke_model_compiler(
     model_file: &PathBuf,
     test_mode: bool,
     module: &str,
-) -> Result<()> {
+) -> Result<usize> {
     log::debug!(
         "invoking model compiler `{:?}` on model `{}` for module `{}`",
         compiler,
