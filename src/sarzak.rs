@@ -9,8 +9,8 @@ use std::{
 };
 
 use ansi_term::Colour;
-use anyhow::{Context, Result};
-use clap::{ArgAction, Parser, Subcommand};
+use anyhow::{anyhow, Context, Result};
+use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use heck::{ToSnakeCase, ToTitleCase};
 use log::{debug, error, warn};
 use toml::{Table, Value};
@@ -18,7 +18,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use uuid::Uuid;
 
 // 🚧 this just needs to go away.
-use chacha::dwarf::{parse_dwarf, populate_lu_dog, DwarfOptions};
+// use chacha::dwarf::{parse_dwarf, populate_lu_dog, DwarfOptions};
 use grace::GraceCompilerOptions;
 use nut::codegen::{emitln, CachingContext};
 use sarzak::{domain::DomainBuilder, mc::SarzakModelCompiler, v2::domain::Domain};
@@ -32,6 +32,7 @@ const MODEL_DIR: &str = "models";
 const METADATA_FILE: &str = "metadata.json";
 
 const JSON_EXT: &str = "json";
+const BINCODE_EXT: &str = "bin";
 
 // Exit codes
 const MODULE_EXISTS: i32 = -1;
@@ -104,6 +105,11 @@ enum Command {
         #[command(subcommand)]
         compiler: Option<Compiler>,
     },
+    /// Convert model formats
+    ///
+    /// Convert a JSON model to either a directory of `.json` files, or a single
+    /// binary encoded `.bin` file.
+    Convert { domain: String, format: ModelFormat },
     /// Display a model
     ///
     /// This command will display a model in a new browser window.
@@ -119,6 +125,14 @@ enum Command {
         /// In either case, the ".json" extension is optional.
         domain: String,
     },
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+enum ModelFormat {
+    /// A directory of JSON files
+    Dir,
+    /// A single binary file
+    Bin,
 }
 
 /// Compiler enum for parsing compiler options
@@ -142,14 +156,14 @@ enum Compiler {
         #[command(flatten)]
         options: GraceCompilerOptions,
     },
-    /// Dwarf Language Compiler
-    ///
-    /// This compiles the dwarf code into a Lu-Dog model, which is basically an
-    /// AST.
-    Dwarf {
-        #[command(flatten)]
-        options: DwarfOptions,
-    },
+    //    /// Dwarf Language Compiler
+    //    ///
+    //    /// This compiles the dwarf code into a Lu-Dog model, which is basically an
+    //    /// AST.
+    //    Dwarf {
+    //        #[command(flatten)]
+    //        options: DwarfOptions,
+    //    },
 }
 
 fn main() -> Result<()> {
@@ -160,8 +174,6 @@ fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-
-    // I suppose command line takes precedence over config file.
 
     if args.test {
         println!("Running in test mode 🧪.");
@@ -180,6 +192,9 @@ fn main() -> Result<()> {
         }
         Command::Generate { compiler, modules } => {
             execute_command_generate(&compiler, &modules, &args.package_dir, args.test)?
+        }
+        Command::Convert { domain, format } => {
+            execute_command_convert(&domain, &format, &args.package_dir)?
         }
         #[cfg(feature = "gui")]
         Command::Show { domain } => execute_command_show(&domain, &args.package_dir, args.test)?,
@@ -231,6 +246,109 @@ fn execute_command_show(domain: &str, dir: &Option<PathBuf>, test_mode: bool) ->
         .context("😱 building domain")?;
 
     sarzak_cli::boink::boink_main(model).map_err(|e| anyhow!("{}", e))
+}
+
+fn execute_command_convert(
+    domain: &str,
+    format: &ModelFormat,
+    dir: &Option<PathBuf>,
+) -> Result<()> {
+    let package_root = find_package_dir(dir)?;
+
+    let mut model_path = package_root.clone();
+    model_path.push(MODEL_DIR);
+
+    let mut converted_name = model_path.clone();
+
+    if domain.ends_with(JSON_EXT) {
+        model_path.push(domain);
+    } else {
+        model_path.push(format!("{}.{}", domain, JSON_EXT));
+    }
+
+    let model_path = if !model_path.exists() {
+        let mut model_path = package_root.clone();
+        if domain.ends_with(JSON_EXT) {
+            model_path.push(domain);
+        } else {
+            model_path.push(format!("{}.{}", domain, JSON_EXT));
+        }
+
+        if !model_path.exists() {
+            return Err(anyhow!("Unable to find model file for domain {}", domain));
+        } else {
+            model_path
+        }
+    } else {
+        model_path
+    };
+
+    println!("Opening model file {}", model_path.display());
+
+    let model = DomainBuilder::new()
+        .cuckoo_model(&model_path)
+        .context("😱 reading model file")?
+        .build_v2()
+        .context("😱 building domain")?;
+
+    match format {
+        ModelFormat::Dir => {
+            let model_name = model_path.file_stem().unwrap().to_str().unwrap();
+            let dir_model_name = format!("{}.v2.{}", model_name, JSON_EXT);
+            converted_name.push(dir_model_name);
+
+            model
+                .persist(&converted_name)
+                .context("😱 writing model file")
+        }
+        ModelFormat::Bin => {
+            let model_name = model_path.file_stem().unwrap().to_str().unwrap();
+            let bincode_model_name = format!("{}.{}", model_name, BINCODE_EXT);
+            converted_name.push(bincode_model_name);
+
+            model
+                .persist_bincode(&converted_name)
+                .context("😱 writing model file")
+        }
+    }
+
+    // Check that the path exists, and that it's a file. From there we just
+    // have to trust...
+
+    //     anyhow::bail!(format!("😱 {:?} is not a json file!", model_file));
+    // }
+
+    // // Here is where we can get the modification time of the model.
+    // let model_metadata = fs::metadata(model_file).context("😱 reading model metadata")?;
+    // let model_modified = model_metadata
+    //     .modified()
+    //     .context("😱 reading model modified time")?;
+
+    // // We want to compare it to the modification time of the v2 model. Only
+    // // continue if the model is newer.
+    // // Ensure that we can find the models directory
+    // //
+    // let mut v2_model = root.clone();
+    // v2_model.push(MODEL_DIR);
+    // anyhow::ensure!(
+    //     v2_model.exists(),
+    //     format!("😱 Unable to find model directory: {}.", v2_model.display())
+    // );
+    // debug!("Found model ✈️  directory.");
+
+    // let model_name = model_file.file_stem().unwrap().to_str().unwrap();
+    // let v2_model_name = format!("{}.v2.{}", model_name, JSON_EXT);
+    // v2_model.push(v2_model_name);
+
+    // let model = if !v2_model.exists() {
+    //     // If the v2 model doesn't exist, we need to create it.
+    //     let model = DomainBuilder::new()
+    //         .cuckoo_model(&model_file)
+    //         .context("😱 reading model file")?
+    //         .build_v2()
+    //         .context("😱 building domain")?;
+
+    //     model.persist(v2_model).context("😱 persisting model")?;
 }
 
 fn execute_command_new(
@@ -495,21 +613,20 @@ fn execute_command_generate(
                                 test_mode,
                                 &module,
                             )?,
-                            Compiler::Dwarf { options: options } => invoke_dwarf(
-                                &options,
-                                &package_root,
-                                &model_file,
-                                test_mode,
-                                &module,
-                            )
-                            .map_err(anyhow::Error::msg)?,
+                            // Compiler::Dwarf { options: options } => invoke_dwarf(
+                            //     &options,
+                            //     &package_root,
+                            //     &model_file,
+                            //     test_mode,
+                            //     &module,
+                            // )
+                            // .map_err(anyhow::Error::msg)?,
                         },
                         None => {
                             let compiler = match &module_config.compiler {
                                 CompilerOptions::Grace(options) => Compiler::Grace {
                                     options: options.clone(),
                                 },
-                                _ => todo!("What about other compilers?"),
                             };
 
                             invoke_model_compiler(
@@ -557,9 +674,9 @@ fn execute_command_generate(
                     CompilerOptions::Grace(options) => Compiler::Grace {
                         options: options.clone(),
                     },
-                    CompilerOptions::Dwarf(options) => Compiler::Dwarf {
-                        options: options.clone(),
-                    },
+                    // CompilerOptions::Dwarf(options) => Compiler::Dwarf {
+                    //     options: options.clone(),
+                    // },
                 }
             };
 
@@ -581,15 +698,15 @@ fn execute_command_generate(
     Ok(())
 }
 
-fn invoke_dwarf(
-    options: &DwarfOptions,
-    root: &PathBuf,
-    model_file: &PathBuf,
-    test_mode: bool,
-    module: &str,
-) -> Result<usize> {
-    Ok(0)
-}
+// fn invoke_dwarf(
+//     options: &DwarfOptions,
+//     root: &PathBuf,
+//     model_file: &PathBuf,
+//     test_mode: bool,
+//     module: &str,
+// ) -> Result<usize> {
+//     Ok(0)
+// }
 
 fn invoke_model_compiler(
     compiler: &Compiler,
@@ -706,11 +823,10 @@ fn invoke_model_compiler(
                     test_mode,
                 )
                 .map_err(anyhow::Error::msg)
-        }
-        Compiler::Dwarf { options } => {
-            invoke_dwarf(&options, &root, &model_file, test_mode, &module)
-                .map_err(anyhow::Error::msg)
-        }
+        } // Compiler::Dwarf { options } => {
+          //     invoke_dwarf(&options, &root, &model_file, test_mode, &module)
+          //         .map_err(anyhow::Error::msg)
+          // }
     }
 }
 

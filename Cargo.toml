@@ -13,12 +13,20 @@ anyhow = "1.0.68"
 clap = { version = "4.0.32", features = ["derive"] }
 heck = "0.4.0"
 log = "0.4.17"
-# nut = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/nut.git", branch = "develop" }
-nut = { path = "../nut" }
+nut = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/nut.git", branch = "develop" }
+# nut = { path = "../nut" }
 # chacha = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/chacha.git", branch = "develop" }
-chacha = { path = "../chacha" }
-# sarzak = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/sarzak.git", branch = "develop" }
-sarzak = { path = "../sarzak" }
+# chacha = { path = "../chacha" }
+################################################################################
+# Note to self: when you see weird compiler errors about not being able to find
+# the compile trait, make sure that grace is pointing at the same sarzk!
+################################################################################
+# sarzak = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/sarzak.git", branch = "develop", default-features = false, features = [
+# "lu-dog-rwlock",
+# ] }
+sarzak = { path = "../sarzak", default-features = false, features = [
+    "lu-dog-rwlock",
+] }
 # grace = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/grace.git", branch = "develop" }
 grace = { path = "../grace" }
 serde = { version = "1.0.152", features = ["derive"] }
