@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use chacha::dwarf::DwarfOptions;
+// use chacha::dwarf::DwarfOptions;
 use grace::GraceCompilerOptions;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -30,9 +30,9 @@ pub enum Compiler {
     /// Rust code -- for now. It's eventually going to be general purpose. Although
     /// it might get archived before that happens...  You just never know.
     Grace(GraceCompilerOptions),
-    /// Dwarf Language Compiler
-    ///
-    /// This compiles the dwarf code into a Lu-Dog model, which is basically an
-    /// AST.
-    Dwarf(DwarfOptions),
+    //    /// Dwarf Language Compiler
+    //    ///
+    //    /// This compiles the dwarf code into a Lu-Dog model, which is basically an
+    //    /// AST.
+    // Dwarf(DwarfOptions),
 }
