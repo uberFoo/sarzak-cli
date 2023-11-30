@@ -384,7 +384,7 @@ fn execute_command_new(
     module: &Option<String>,
     dir: &Option<PathBuf>,
     test_mode: bool,
-    verbosity: u8,
+    _verbosity: u8,
 ) -> Result<()> {
     let rust_name = domain.to_snake_case();
     let module_name = match module {
@@ -766,7 +766,7 @@ fn invoke_model_compiler(
     model_file: &PathBuf,
     test_mode: bool,
     module: &str,
-    verbosity: u8,
+    _verbosity: u8,
 ) -> Result<usize> {
     log::debug!(
         "invoking model compiler `{:?}` on model `{}` for module `{}`",
@@ -874,7 +874,7 @@ fn invoke_model_compiler(
                     &src_path,
                     Box::new(options),
                     test_mode,
-                    verbosity,
+                    // verbosity,
                 )
                 .map_err(anyhow::Error::msg)
         } // Compiler::Dwarf { options } => {
