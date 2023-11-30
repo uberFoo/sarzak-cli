@@ -21,8 +21,7 @@ nut = { git = "https://github.com/uberFoo/nut" }
 sarzak = { git = "https://github.com/uberFoo/sarzak", default-features = false, tag = "v2.0.0", features = [
     "lu-dog-rwlock",
 ] }
-# grace = { git = "https://gitlab-runner:7kzem8nVeizSJQnLPWFY@git.uberfoo.com/sarzak/grace.git", branch = "develop" }
-grace = { path = "../grace" }
+grace = { git = "https://github.com/uberFoo/grace.git", branch = "develop" }
 serde = { version = "1.0.152", features = ["derive"] }
 toml = "0.6.0"
 uuid = { version = "1.2.2", features = ["v5"] }
@@ -35,6 +34,9 @@ eframe = { version = "0.21.0", default-features = false, features = [
 ], optional = true }
 ansi_term = "0.12.1"
 color-backtrace = "0.5.1"
+
+# [patch."https://github.com/uberFoo/grace.git"]
+# grace = { path = "../grace" }
 
 # [patch."https://github.com/uberFoo/sarzak"]
 # sarzak = { path = "../sarzak" }
