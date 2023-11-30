@@ -17,7 +17,7 @@ pub struct ModuleConfig {
     pub model: PathBuf,
     /// The compiler to use for this domain
     ///
-    pub compiler: Compiler,
+    pub compiler: Vec<Compiler>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

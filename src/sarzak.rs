@@ -42,6 +42,10 @@ const NOTHING_TO_DO: i32 = -3;
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
 struct Args {
+    /// Verbosity
+    ///
+    #[clap(long, short, action=ArgAction::Count)]
+    verbosity: u8,
     /// Test mode
     ///
     /// Don't execute commands, but instead print what commands would be executed.
@@ -109,7 +113,11 @@ enum Command {
     ///
     /// Convert a JSON model to either a directory of `.json` files, or a single
     /// binary encoded `.bin` file.
-    Convert { domain: String, format: ModelFormat },
+    Convert {
+        domain: String,
+        format: ModelFormat,
+        out_dir: Option<PathBuf>,
+    },
     /// Display a model
     ///
     /// This command will display a model in a new browser window.
@@ -167,7 +175,7 @@ enum Compiler {
 }
 
 fn main() -> Result<()> {
-    // pretty_env_logger::init();
+    color_backtrace::install();
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
@@ -187,14 +195,30 @@ fn main() -> Result<()> {
     }
 
     match args.command {
-        Command::New { domain, module } => {
-            execute_command_new(&domain, &module, &args.package_dir, args.test)?
-        }
-        Command::Generate { compiler, modules } => {
-            execute_command_generate(&compiler, &modules, &args.package_dir, args.test)?
-        }
-        Command::Convert { domain, format } => {
-            execute_command_convert(&domain, &format, &args.package_dir)?
+        Command::New { domain, module } => execute_command_new(
+            &domain,
+            &module,
+            &args.package_dir,
+            args.test,
+            args.verbosity,
+        )?,
+        Command::Generate { compiler, modules } => execute_command_generate(
+            &compiler,
+            &modules,
+            &args.package_dir,
+            args.test,
+            args.verbosity,
+        )?,
+        Command::Convert {
+            domain,
+            format,
+            out_dir,
+        } => {
+            // if let Some(out_dir) = out_dir {
+            execute_command_convert(&domain, &format, &args.package_dir, &out_dir)?
+            // } else {
+            //     execute_command_convert(&domain, &format, &args.package_dir)?
+            // }
         }
         #[cfg(feature = "gui")]
         Command::Show { domain } => execute_command_show(&domain, &args.package_dir, args.test)?,
@@ -252,13 +276,18 @@ fn execute_command_convert(
     domain: &str,
     format: &ModelFormat,
     dir: &Option<PathBuf>,
+    out_dir: &Option<PathBuf>,
 ) -> Result<()> {
     let package_root = find_package_dir(dir)?;
 
     let mut model_path = package_root.clone();
-    model_path.push(MODEL_DIR);
+    // model_path.push(MODEL_DIR);
 
-    let mut converted_name = model_path.clone();
+    let mut converted_name = if let Some(out_dir) = out_dir {
+        out_dir.clone()
+    } else {
+        model_path.clone()
+    };
 
     if domain.ends_with(JSON_EXT) {
         model_path.push(domain);
@@ -291,9 +320,9 @@ fn execute_command_convert(
         .build_v2()
         .context("😱 building domain")?;
 
+    let model_name = model_path.file_stem().unwrap().to_str().unwrap();
     match format {
         ModelFormat::Dir => {
-            let model_name = model_path.file_stem().unwrap().to_str().unwrap();
             let dir_model_name = format!("{}.v2.{}", model_name, JSON_EXT);
             converted_name.push(dir_model_name);
 
@@ -302,7 +331,6 @@ fn execute_command_convert(
                 .context("😱 writing model file")
         }
         ModelFormat::Bin => {
-            let model_name = model_path.file_stem().unwrap().to_str().unwrap();
             let bincode_model_name = format!("{}.{}", model_name, BINCODE_EXT);
             converted_name.push(bincode_model_name);
 
@@ -356,6 +384,7 @@ fn execute_command_new(
     module: &Option<String>,
     dir: &Option<PathBuf>,
     test_mode: bool,
+    verbosity: u8,
 ) -> Result<()> {
     let rust_name = domain.to_snake_case();
     let module_name = match module {
@@ -414,7 +443,7 @@ fn execute_command_new(
         let options = CompilerOptions::Grace(GraceCompilerOptions::default());
         let module_config = ModuleConfig {
             model: format!("models/{}.{}", rust_name, JSON_EXT).into(),
-            compiler: options,
+            compiler: vec![options],
         };
 
         modules.insert(module_name.clone(), Value::try_from(module_config).unwrap());
@@ -549,6 +578,7 @@ fn execute_command_generate(
     modules: &Option<Vec<String>>,
     package_dir: &Option<PathBuf>,
     test_mode: bool,
+    verbosity: u8,
 ) -> Result<()> {
     // Find the package root
     //
@@ -612,6 +642,7 @@ fn execute_command_generate(
                                 &model_file,
                                 test_mode,
                                 &module,
+                                verbosity,
                             )?,
                             // Compiler::Dwarf { options: options } => invoke_dwarf(
                             //     &options,
@@ -623,19 +654,24 @@ fn execute_command_generate(
                             // .map_err(anyhow::Error::msg)?,
                         },
                         None => {
-                            let compiler = match &module_config.compiler {
-                                CompilerOptions::Grace(options) => Compiler::Grace {
-                                    options: options.clone(),
-                                },
-                            };
+                            let mut count = 0;
+                            for compiler in &module_config.compiler {
+                                let compiler = match compiler {
+                                    CompilerOptions::Grace(options) => Compiler::Grace {
+                                        options: options.clone(),
+                                    },
+                                };
 
-                            invoke_model_compiler(
-                                &compiler,
-                                &package_root,
-                                &model_file,
-                                test_mode,
-                                &module,
-                            )?
+                                count += invoke_model_compiler(
+                                    &compiler,
+                                    &package_root,
+                                    &model_file,
+                                    test_mode,
+                                    &module,
+                                    verbosity,
+                                )?
+                            }
+                            count
                         }
                     };
                 } else {
@@ -667,21 +703,37 @@ fn execute_command_generate(
             let mut model_file = package_root.clone();
             model_file.push(&config.model);
 
-            let compiler: Compiler = if let Some(compiler) = &compiler {
-                compiler.clone()
+            count += if let Some(compiler) = &compiler {
+                invoke_model_compiler(
+                    &compiler,
+                    &package_root,
+                    &model_file,
+                    test_mode,
+                    &module,
+                    verbosity,
+                )?
             } else {
-                match &config.compiler {
-                    CompilerOptions::Grace(options) => Compiler::Grace {
-                        options: options.clone(),
-                    },
-                    // CompilerOptions::Dwarf(options) => Compiler::Dwarf {
-                    //     options: options.clone(),
-                    // },
+                let mut count = 0;
+                for compiler in &config.compiler {
+                    let compiler = match compiler {
+                        CompilerOptions::Grace(options) => Compiler::Grace {
+                            options: options.clone(),
+                        },
+                        // CompilerOptions::Dwarf(options) => Compiler::Dwarf {
+                        //     options: options.clone(),
+                        // },
+                    };
+                    count += invoke_model_compiler(
+                        &compiler,
+                        &package_root,
+                        &model_file,
+                        test_mode,
+                        &module,
+                        verbosity,
+                    )?;
                 }
-            };
-
-            count +=
-                invoke_model_compiler(&compiler, &package_root, &model_file, test_mode, &module)?;
+                count
+            }
         }
     };
 
@@ -714,6 +766,7 @@ fn invoke_model_compiler(
     model_file: &PathBuf,
     test_mode: bool,
     module: &str,
+    verbosity: u8,
 ) -> Result<usize> {
     log::debug!(
         "invoking model compiler `{:?}` on model `{}` for module `{}`",
@@ -821,6 +874,7 @@ fn invoke_model_compiler(
                     &src_path,
                     Box::new(options),
                     test_mode,
+                    verbosity,
                 )
                 .map_err(anyhow::Error::msg)
         } // Compiler::Dwarf { options } => {
